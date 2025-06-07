@@ -1,173 +1,277 @@
-# Sistema de Gestión de Biblioteca Escolar - Frontend
+# Sistema de Gestión de Biblioteca Escolar - Backend
 
-## 📖 Descripción del Proyecto
+## Descripción del Proyecto
 
-El frontend del Sistema de Gestión de Biblioteca Escolar es una aplicación web moderna desarrollada con Next.js que permite a bibliotecarios y administradores gestionar de forma eficiente todos los procesos de una biblioteca escolar: inventario, préstamos, devoluciones, usuarios y reportes.
+El Sistema de Gestión de Biblioteca Escolar es una aplicación diseñada para digitalizar y optimizar los procesos de gestión bibliotecaria en entornos educativos. Este sistema reemplaza el control manual por una solución digital integral que facilita el seguimiento de préstamos, gestión de inventario, búsqueda de recursos y generación de informes.
 
-### 🎯 Problemática que Resuelve
+### Problemática que resuelve
 
-- ✅ **Control manual ineficiente**: Reemplaza registros en papel por una interfaz digital intuitiva
-- ✅ **Búsqueda lenta de recursos**: Búsqueda instantánea y filtros avanzados
-- ✅ **Seguimiento de préstamos**: Dashboard visual para monitorear préstamos activos y vencidos
-- ✅ **Gestión de inventario**: Registro rápido con integración a Google Books API
-- ✅ **Reportes manuales**: Generación automática de estadísticas e informes
+- ✅ Control manual ineficiente de registros
+- ✅ Dificultad para rastrear préstamos
+- ✅ Deterioro de materiales sin adecuado registro
+- ✅ Búsqueda lenta de recursos
+- ✅ Falta de notificaciones para devoluciones
+- ✅ Inventario desactualizado
 
-### 👥 Usuarios del Sistema
+## Arquitectura del Sistema
 
-- **Administrador**: Gestión de usuarios del sistema y supervisión general
-- **Bibliotecario**: Operaciones diarias de la biblioteca
-- **Estudiantes y Docentes**: Registrados en el sistema para préstamos (sin acceso directo)
+El proyecto utiliza una **arquitectura en capas** con las siguientes responsabilidades:
 
----
+### 📁 Estructura de Capas
 
-## 🛠️ Stack Tecnológico
+```markdowun
+src/
+├── controllers/          # Controladores HTTP - Reciben peticiones
+├── services/            # Lógica de negocio y casos de uso
+├── repositories/        # Acceso a datos y operaciones con BD
+├── models/             # Modelos de Mongoose (esquemas)
+├── adapters/           # Integraciones con servicios externos
+├── middlewares/        # Guards, pipes y middlewares
+├── common/             # Utilidades, DTOs, interfaces compartidas
+├── config/             # Configuración de la aplicación
+└── infrastructure/     # Logging, excepciones, etc.
+```
 
-### Core Framework
-- **[Next.js 14+](https://nextjs.org/)**: Framework React con App Router y SSR
-- **[React 18+](https://react.dev/)**: Biblioteca de interfaz de usuario
-- **[TypeScript](https://www.typescriptlang.org/)**: Tipado estático para mayor seguridad
+### 🔄 Flujo de Datos
 
-### Styling y UI
-- **[Tailwind CSS](https://tailwindcss.com/)**: Framework CSS utility-first
-- **[Chakra UI](https://chakra-ui.com/)**: Biblioteca de componentes accesibles
-- **[Lucide React](https://lucide.dev/)**: Iconos modernos
+```markdowun
+Request → Controller → Service → Repository → Database
+                          ↓
+                     Adapter (APIs externas)
+```
 
-### Estado y Datos
-- **[React Query/TanStack Query](https://tanstack.com/query)**: Gestión de estado del servidor
-- **[React Context API](https://react.dev/reference/react/createContext)**: Estado global de la aplicación
-- **[React Hook Form](https://react-hook-form.com/)**: Formularios performantes
-- **[Zod](https://zod.dev/)**: Validación de esquemas TypeScript
+## Tecnologías Utilizadas
+
+### Backend Core
+
+- **Framework**: NestJS (Node.js + TypeScript)
+- **Base de Datos**: MongoDB
+- **ODM**: Mongoose
+- **Autenticación**: JWT (JSON Web Tokens)
+- **Validación**: class-validator y class-transformer
+
+### Seguridad
+
+- **Encriptación**: bcrypt para contraseñas
+- **Autenticación**: JWT con guards personalizados
+- **Autorización**: RBAC (Role-Based Access Control)
+
+### APIs Externas
+
+- **Google Books API**: Para obtener información bibliográfica
 
 ### Herramientas de Desarrollo
-- **[ESLint](https://eslint.org/) + [Prettier](https://prettier.io/)**: Linting y formateo
-- **[Jest](https://jestjs.io/) + [React Testing Library](https://testing-library.com/)**: Testing
-- **[Axios](https://axios-http.com/)**: Cliente HTTP para APIs
 
----
+- **Logging**: Winston
+- **Testing**: Jest
+- **Linting**: ESLint + Prettier
 
-## 🏗️ Estructura del Proyecto
-
-```
-biblioteca-frontend/
-├── src/
-│   ├── app/                    # App Router de Next.js
-│   │   ├── (auth)/            # Rutas de autenticación
-│   │   │   ├── login/
-│   │   │   └── layout.tsx
-│   │   ├── (dashboard)/       # Rutas protegidas principales
-│   │   │   ├── dashboard/
-│   │   │   ├── people/
-│   │   │   ├── inventory/
-│   │   │   ├── loans/
-│   │   │   ├── reports/
-│   │   │   └── layout.tsx
-│   │   ├── admin/             # Rutas administrativas
-│   │   │   ├── users/
-│   │   │   └── layout.tsx
-│   │   ├── globals.css
-│   │   ├── layout.tsx         # Layout raíz
-│   │   └── page.tsx          # Página principal
-│   ├── components/            # Componentes reutilizables
-│   │   ├── ui/               # Componentes base (Button, Input, etc.)
-│   │   ├── forms/            # Formularios específicos
-│   │   ├── features/         # Componentes por funcionalidad
-│   │   └── layout/           # Componentes de layout
-│   ├── hooks/                # Custom hooks
-│   │   ├── useAuth.ts
-│   │   ├── usePermissions.ts
-│   │   └── useApi.ts
-│   ├── services/             # Servicios de API
-│   │   ├── api/
-│   │   │   ├── client.ts     # Cliente HTTP configurado
-│   │   │   ├── auth.ts       # Servicios de autenticación
-│   │   │   ├── people.ts     # Servicios de personas
-│   │   │   ├── inventory.ts  # Servicios de inventario
-│   │   │   └── loans.ts      # Servicios de préstamos
-│   │   └── external/
-│   │       └── googleBooks.ts
-│   ├── lib/                  # Utilidades y configuraciones
-│   │   ├── auth.ts          # Lógica de autenticación
-│   │   ├── utils.ts         # Utilidades generales
-│   │   └── validations.ts   # Esquemas de validación Zod
-│   ├── types/               # Definiciones de tipos TypeScript
-│   │   ├── auth.ts
-│   │   ├── api.ts
-│   │   └── common.ts
-│   └── constants/           # Constantes de la aplicación
-│       ├── routes.ts
-│       ├── roles.ts
-│       └── api.ts
-├── public/                  # Archivos estáticos
-├── tests/                   # Pruebas
-├── .env.local.example      # Variables de entorno de ejemplo
-├── next.config.js          # Configuración de Next.js
-├── tailwind.config.ts      # Configuración de Tailwind
-├── tsconfig.json           # Configuración de TypeScript
-└── package.json            # Dependencias y scripts
-```
-
----
-
-## 🚀 Instalación y Configuración
-
-### Prerrequisitos
+## Requisitos Previos
 
 - **Node.js** (v18 o superior)
 - **npm** o **yarn**
-- **Backend de la biblioteca** ejecutándose
+- **MongoDB** (v6.0 o superior)
+- **Git**
 
-### 1. Clonar el Repositorio
+## Instalación y Configuración
+
+### 1. 📥 Clonar el Repositorio
 
 ```bash
-git clone https://github.com/MasCreaThor/BIBLIOTECA-FRONTEND.git
-cd biblioteca-frontend
+git clone https://github.com/MasCreaThor/BIBLIOTECA-BACKEND.git
+cd biblioteca-backend
 ```
 
-### 2. Instalar Dependencias
+### 2. 📦 Instalar Dependencias
 
 ```bash
 npm install
-# o
-yarn install
 ```
 
-### 3. Configurar Variables de Entorno
+### 3. ⚙️ Configurar Variables de Entorno
 
-Copia el archivo de ejemplo y configura las variables:
+Copia el archivo de ejemplo y edítalo con tus valores:
 
 ```bash
-cp .env.local.example .env.local
+cp .env.example .env
 ```
 
-Edita `.env.local` con tus valores:
+Variables principales requeridas:
 
-```env
-# URL del backend
-NEXT_PUBLIC_API_URL=http://localhost:3000/api
-
-# Google Books API (opcional)
-NEXT_PUBLIC_GOOGLE_BOOKS_API_KEY=tu_api_key_aqui
-
-# Configuración de autenticación
-NEXTAUTH_SECRET=tu_secret_key_super_segura
-NEXTAUTH_URL=http://localhost:3001
-
-# Configuración de desarrollo
-NEXT_PUBLIC_APP_ENV=development
-```
-
-### 4. Ejecutar la Aplicación
-
-#### Modo Desarrollo
 ```bash
-npm run dev
-# o
-yarn dev
+# Base de datos
+MONGODB_URI=mongodb://localhost:27017/biblioteca-escolar
+
+# JWT
+JWT_SECRET=tu_clave_secreta_super_segura
+
+# Google Books (opcional)
+GOOGLE_BOOKS_API_KEY=tu_api_key_de_google_books
 ```
 
-La aplicación estará disponible en: **http://localhost:3001**
+### 4. 🗄️ Configurar Base de Datos
 
----
+Asegúrate de que MongoDB esté ejecutándose:
+
+```bash
+# En macOS con Homebrew
+brew services start mongodb-community
+
+# En Linux
+sudo systemctl start mongod
+
+# En Windows
+net start MongoDB
+```
+
+### 5. 🚀 Iniciar el Servidor
+
+#### Modo Desarrollo (recomendado)
+
+```bash
+npm run start:dev
+```
+
+#### Modo Producción
+
+```bash
+npm run build
+npm run start:prod
+```
+
+El servidor estará disponible en: **<http://localhost:3000/api>**
+
+## 🏗️ Desarrollo
+
+### Crear un Nuevo Módulo
+
+Para crear un módulo completo siguiendo la arquitectura en capas:
+
+```bash
+# Generar recurso completo
+nest g resource nombre-modulo
+
+# Luego organizar archivos según la arquitectura:
+# - Controller → src/controllers/
+# - Service → src/services/
+# - DTO → src/common/dto/
+# - Interfaces → src/common/interfaces/
+```
+
+### Estructura de un Módulo Típico
+
+```typescript
+// Controller (src/controllers/)
+@Controller('recursos')
+export class RecursoController {
+  constructor(private readonly recursoService: RecursoService) {}
+  
+  @Get()
+  findAll() {
+    return this.recursoService.findAll();
+  }
+}
+
+// Service (src/services/)
+@Injectable()
+export class RecursoService {
+  constructor(private readonly recursoRepository: RecursoRepository) {}
+  
+  findAll() {
+    return this.recursoRepository.findAll();
+  }
+}
+
+// Repository (src/repositories/)
+@Injectable()
+export class RecursoRepository extends BaseRepositoryImpl<Recurso> {
+  constructor(@InjectModel(Recurso.name) recursoModel: Model<Recurso>) {
+    super(recursoModel);
+  }
+}
+```
+
+### Comandos Útiles
+
+```bash
+#Verificar y Probar
+npm run build
+
+# Verificar estado
+npm run admin:status
+
+# Crear administrador
+npm run admin:init
+# Desarrollo
+npm run start:dev          # Modo desarrollo con watch
+npm run start:debug        # Modo debug
+
+# Testing
+npm run test               # Pruebas unitarias
+npm run test:watch         # Pruebas en modo watch
+npm run test:cov           # Cobertura de pruebas
+npm run test:e2e           # Pruebas end-to-end
+
+# Calidad de código
+npm run lint               # Ejecutar linter
+npm run format             # Formatear código
+
+# Base de datos
+npm run db:seed
+
+```
+
+## 🛡️ Seguridad
+
+### Principios Implementados
+
+- **Confidencialidad**: JWT + bcrypt
+- **Integridad**: Validación de datos + middleware
+- **Disponibilidad**: Manejo de errores + logging
+
+### Autenticación
+
+```typescript
+// Ruta pública (sin autenticación)
+@Public()
+@Get('publico')
+metodoPublico() {}
+
+// Ruta protegida (requiere autenticación)
+@Get('privado')
+metodoPrivado() {}
+
+// Ruta con roles específicos
+@Roles(UserRole.ADMIN)
+@Get('admin-only')
+metodoAdmin() {}
+```
+
+## 📊 Monitoreo y Logging
+
+El sistema incluye logging estructurado con Winston:
+
+```typescript
+// En cualquier servicio
+constructor(private logger: LoggerService) {
+  this.logger.setContext('NombreClase');
+}
+
+// Usar logging
+this.logger.log('Operación exitosa');
+this.logger.error('Error en operación', error.stack);
+this.logger.warn('Advertencia');
+```
+
+## 🧪 Testing
+
+### Estructura de Pruebas
+
+```markdown
+test/
+└── unit/              # Pruebas unitarias
+
+```
 
 ### Ejecutar Pruebas
 
@@ -175,68 +279,50 @@ La aplicación estará disponible en: **http://localhost:3001**
 # Todas las pruebas
 npm test
 
-# Pruebas en modo watch
-npm run test:watch
+# Pruebas específicas
+npm test -- --testNamePattern="Usuario"
+
+# Con cobertura
+npm run test:cov
 ```
 
----
+## 📚 Módulos del Sistema
 
-## 🔧 Solución de Problemas
+### ✅ Completados
 
-#### Errores de TypeScript
-```bash
-# Limpiar cache de TypeScript
-rm -rf .next
-npm run type-check
-```
+- [x] Configuración base del proyecto
+- [x] Arquitectura en capas
+- [x] Autenticación JWT
+- [x] Guards y middlewares
+- [x] Logging y manejo de errores
 
-#### Problemas de Estilos
-```bash
-# Recompilar Tailwind CSS
-npm run dev
-```
+### 🚧 En Desarrollo
 
----
+- [ ] Gestión de usuarios y personas
+- [ ] Gestión de inventario
+- [ ] Sistema de préstamos
+- [ ] Integración con Google Books
+- [ ] Búsqueda y filtrado
+- [ ] Informes y estadísticas
 
-## 📚 Recursos Adicionales
+### 📋 Planificado
 
-### Documentación
-
-- [Next.js Documentation](https://nextjs.org/docs)
-- [React Documentation](https://react.dev)
-- [Tailwind CSS Documentation](https://tailwindcss.com/docs)
-- [Chakra UI Documentation](https://chakra-ui.com/docs)
-- [React Query Documentation](https://tanstack.com/query/latest/docs/react/overview)
-
-### Herramientas de Desarrollo
-- [React Developer Tools](https://react.dev/learn/react-developer-tools)
-- [TanStack Query DevTools](https://tanstack.com/query/latest/docs/react/devtools)
-- [Tailwind CSS IntelliSense](https://marketplace.visualstudio.com/items?itemName=bradlc.vscode-tailwindcss)
-
----
+- [ ] Notificaciones automáticas
+- [ ] Dashboard administrativo
+- [ ] API documentación (Swagger)
+- [ ] Backup automático
+- [ ] Cache con Redis
 
 ### Convenciones de Código
 
-- **Componentes**: PascalCase (`PersonForm.tsx`)
-- **Hooks**: camelCase con prefijo `use` (`useAuth.ts`)
-- **Utilidades**: camelCase (`formatDate.ts`)
-- **Constantes**: UPPER_CASE (`API_ENDPOINTS.ts`)
-
-### Commit Messages
-
-```bash
-feat: agregar formulario de personas
-fix: corregir validación de email
-docs: actualizar README
-style: mejorar espaciado en header
-refactor: simplificar hook useAuth
-test: agregar pruebas para PersonForm
-```
-
----
+- **TypeScript**: Tipado estricto
+- **ESLint + Prettier**: Estilo de código consistente
+- **Commits**: Mensajes descriptivos
+- **Tests**: Cobertura mínima del 80%
 
 ## 📞 Soporte
 
 ### Contacto
-- **Email**: [yadmunozr22@itp.edu.co](mailto:yadmunozr22@itp.edu.co)
-- **Email**: [andersonceron2020@itp.edu.co](mailto:andersonceron2020@itp.edu.co)
+
+- **Email**: [yadmunozr22@itp.edu.co](mailto:yadmunozr22@itp.edu.co) - [andersonceron2020@itp.edu.co](mailto:andersonceron2020@itp.edu.co)
+- **GitHub**: [MasCreaThor](https://github.com/MasCreaThor)
