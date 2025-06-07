@@ -116,7 +116,7 @@ export function MetadataSection({ form }: MetadataSectionProps) {
         </InputGroup>
         
         <FormErrorMessage>
-          {errors.isbn?.message || isbnValidation.message}
+          {(errors.isbn?.message as string) || isbnValidation.message}
         </FormErrorMessage>
         
         <FormHelperText>
@@ -171,7 +171,7 @@ export function MetadataSection({ form }: MetadataSectionProps) {
           rows={4}
           resize="vertical"
         />
-        <FormErrorMessage>{errors.notes?.message}</FormErrorMessage>
+        <FormErrorMessage>{errors.notes?.message as string}</FormErrorMessage>
         <FormHelperText>
           Información adicional que pueda ser útil sobre este recurso (máximo 500 caracteres)
         </FormHelperText>

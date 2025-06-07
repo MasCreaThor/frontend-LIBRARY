@@ -42,22 +42,26 @@ export default function InventoryPage() {
   // Datos para estadísticas rápidas
   const { data: resourceTypes } = useResourceTypes();
 
-  const handleCreateResource = async (data: CreateResourceRequest) => {
+  // Handler para crear recursos - ahora maneja ambos tipos
+  const handleCreateResource = async (data: CreateResourceRequest | UpdateResourceRequest) => {
     try {
-      await createMutation.mutateAsync(data);
+      // Como está en modo creación, sabemos que es CreateResourceRequest
+      await createMutation.mutateAsync(data as CreateResourceRequest);
       onCreateClose();
     } catch (error) {
       // Error manejado por el hook
     }
   };
 
-  const handleUpdateResource = async (data: UpdateResourceRequest) => {
+  // Handler para actualizar recursos - ahora maneja ambos tipos
+  const handleUpdateResource = async (data: CreateResourceRequest | UpdateResourceRequest) => {
     if (!editingResource) return;
     
     try {
+      // Como está en modo edición, sabemos que es UpdateResourceRequest
       await updateMutation.mutateAsync({
         id: editingResource._id,
-        data,
+        data: data as UpdateResourceRequest,
       });
       setEditingResource(null);
       onEditClose();
@@ -172,6 +176,7 @@ export default function InventoryPage() {
               onSubmit={handleCreateResource}
               onCancel={onCreateClose}
               isLoading={createMutation.isPending}
+              isEdit={false}
             />
           </ModalBody>
         </ModalContent>

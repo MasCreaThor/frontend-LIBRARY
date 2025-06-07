@@ -148,7 +148,7 @@ export function ResourceList({
   };
 
   // Estados derivados
-  const resources = resourcesResponse?.data || [];
+  const resources: Resource[] = resourcesResponse?.data || [];
   const totalCount = resourcesResponse?.pagination.total || 0;
   const isLoadingData = isLoading || isRefetching;
   const isMutating = updateAvailabilityMutation.isPending || deleteMutation.isPending;
@@ -212,7 +212,7 @@ export function ResourceList({
             opacity={isMutating ? 0.6 : 1}
             transition="opacity 0.2s"
           >
-            {resources.map((resource) => (
+            {resources.map((resource: Resource) => (
               <ResourceCard
                 key={resource._id}
                 resource={resource}

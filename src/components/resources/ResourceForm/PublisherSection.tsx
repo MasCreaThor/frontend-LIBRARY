@@ -16,7 +16,7 @@ import {
 } from '@chakra-ui/react';
 import { useState } from 'react';
 import { UseFormReturn } from 'react-hook-form';
-import { FiBuilding, FiPlus } from 'react-icons/fi';
+import { FiHome, FiPlus } from 'react-icons/fi'; // Cambiar FiBuilding por FiHome
 import { usePublishers, useFindOrCreatePublisher } from '@/hooks/useResources';
 import { TextUtils } from '@/utils';
 
@@ -67,7 +67,7 @@ export function PublisherSection({ form }: PublisherSectionProps) {
           <Button
             size="sm"
             variant="outline"
-            leftIcon={<FiBuilding />}
+            leftIcon={<FiHome />}
             onClick={() => setShowNewPublisherInput(true)}
           >
             Nueva Editorial

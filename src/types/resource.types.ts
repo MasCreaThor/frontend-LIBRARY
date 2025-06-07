@@ -155,6 +155,10 @@ export interface ResourceFilters {
   sortOrder?: 'asc' | 'desc';
 }
 
+// ===== RE-EXPORTACIONES DE TIPOS COMUNES =====
+// Re-exportar PaginatedResponse para uso con recursos
+export type { PaginatedResponse };
+
 // ===== RESPUESTAS ESPECÍFICAS =====
 export type ResourceResponse = ApiResponse<Resource>;
 export type ResourceListResponse = ApiResponse<PaginatedResponse<Resource>>;

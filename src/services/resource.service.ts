@@ -24,6 +24,9 @@ import type {
   GoogleBooksSearchResponse,
 } from '@/types/resource.types';
 
+// Importar ApiResponse para respuestas específicas
+import type { ApiResponse } from '@/types/api.types';
+
 const RESOURCE_ENDPOINTS = {
   RESOURCES: '/resources',
   RESOURCE_BY_ID: (id: string) => `/resources/${id}`,
@@ -167,13 +170,13 @@ export class ResourceService {
   }
   
   static async createCategory(data: { name: string; description: string; color?: string }): Promise<Category> {
-    const response = await axiosInstance.post<ResourceResponse>(
+    const response = await axiosInstance.post<ApiResponse<Category>>(
       RESOURCE_ENDPOINTS.CATEGORIES,
       data
     );
     
     if (response.data.success && response.data.data) {
-      return response.data.data as Category;
+      return response.data.data;
     }
     
     throw new Error(response.data.message || 'Error al crear categoría');
@@ -210,13 +213,13 @@ export class ResourceService {
   }
   
   static async createAuthor(data: { name: string; biography?: string }): Promise<Author> {
-    const response = await axiosInstance.post<ResourceResponse>(
+    const response = await axiosInstance.post<ApiResponse<Author>>(
       RESOURCE_ENDPOINTS.AUTHORS,
       data
     );
     
     if (response.data.success && response.data.data) {
-      return response.data.data as Author;
+      return response.data.data;
     }
     
     throw new Error(response.data.message || 'Error al crear autor');
@@ -249,13 +252,13 @@ export class ResourceService {
   }
   
   static async findOrCreatePublisher(name: string): Promise<Publisher> {
-    const response = await axiosInstance.post<ResourceResponse>(
+    const response = await axiosInstance.post<ApiResponse<Publisher>>(
       RESOURCE_ENDPOINTS.PUBLISHER_FIND_OR_CREATE,
       { name }
     );
     
     if (response.data.success && response.data.data) {
-      return response.data.data as Publisher;
+      return response.data.data;
     }
     
     throw new Error(response.data.message || 'Error al crear editorial');

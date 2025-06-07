@@ -79,7 +79,7 @@ export function BasicInfoSection({
           placeholder="Ej: Cien años de soledad, Ajedrez para principiantes..."
           size="lg"
         />
-        <FormErrorMessage>{errors.title?.message}</FormErrorMessage>
+        <FormErrorMessage>{errors.title?.message as string}</FormErrorMessage>
         <FormHelperText>
           Nombre completo y descriptivo del recurso
         </FormHelperText>
@@ -107,7 +107,7 @@ export function BasicInfoSection({
             );
           })}
         </Select>
-        <FormErrorMessage>{errors.typeId?.message}</FormErrorMessage>
+        <FormErrorMessage>{errors.typeId?.message as string}</FormErrorMessage>
         {selectedType && (
           <Box mt={2}>
             <Badge 
@@ -134,7 +134,7 @@ export function BasicInfoSection({
               </option>
             ))}
           </Select>
-          <FormErrorMessage>{errors.categoryId?.message}</FormErrorMessage>
+          <FormErrorMessage>{errors.categoryId?.message as string}</FormErrorMessage>
         </FormControl>
 
         {/* Ubicación */}
@@ -150,7 +150,7 @@ export function BasicInfoSection({
               </option>
             ))}
           </Select>
-          <FormErrorMessage>{errors.locationId?.message}</FormErrorMessage>
+          <FormErrorMessage>{errors.locationId?.message as string}</FormErrorMessage>
         </FormControl>
       </HStack>
 
@@ -168,7 +168,7 @@ export function BasicInfoSection({
               </option>
             ))}
           </Select>
-          <FormErrorMessage>{errors.stateId?.message}</FormErrorMessage>
+          <FormErrorMessage>{errors.stateId?.message as string}</FormErrorMessage>
         </FormControl>
 
         {/* Volúmenes/Cantidad */}
@@ -192,7 +192,7 @@ export function BasicInfoSection({
               </NumberInput>
             )}
           />
-          <FormErrorMessage>{errors.volumes?.message}</FormErrorMessage>
+          <FormErrorMessage>{errors.volumes?.message as string}</FormErrorMessage>
           <FormHelperText>
             Número de copias o volúmenes disponibles
           </FormHelperText>

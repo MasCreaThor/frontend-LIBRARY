@@ -44,21 +44,31 @@ const resourceSchema = z.object({
 
 type ResourceFormData = z.infer<typeof resourceSchema>;
 
-interface ResourceFormProps {
-  resource?: Resource;
-  onSubmit: (data: CreateResourceRequest | UpdateResourceRequest) => Promise<void>;
+// Interfaces específicas para cada modo
+interface ResourceFormCreateProps {
+  resource?: never;
+  onSubmit: (data: CreateResourceRequest) => Promise<void>;
   onCancel: () => void;
   isLoading?: boolean;
-  isEdit?: boolean;
+  isEdit?: false;
 }
 
-export function ResourceForm({
-  resource,
-  onSubmit,
-  onCancel,
-  isLoading = false,
-  isEdit = false,
-}: ResourceFormProps) {
+interface ResourceFormEditProps {
+  resource: Resource;
+  onSubmit: (data: UpdateResourceRequest) => Promise<void>;
+  onCancel: () => void;
+  isLoading?: boolean;
+  isEdit: true;
+}
+
+// Tipo union para las props
+type ResourceFormProps = ResourceFormCreateProps | ResourceFormEditProps;
+
+export function ResourceForm(props: ResourceFormProps) {
+  const { onSubmit, onCancel, isLoading = false } = props;
+  const resource = 'resource' in props ? props.resource : undefined;
+  const isEdit = 'isEdit' in props ? props.isEdit : false;
+  
   const [businessRulesErrors, setBusinessRulesErrors] = useState<string[]>([]);
 
   // Queries para datos auxiliares
@@ -134,7 +144,36 @@ export function ResourceForm({
       notes: data.notes?.trim() || undefined,
     };
 
-    await onSubmit(cleanData);
+    if (isEdit) {
+      // Para edición, omitir campos que no se pueden cambiar y crear UpdateResourceRequest
+      const updateData: UpdateResourceRequest = {
+        title: cleanData.title,
+        categoryId: cleanData.categoryId,
+        authorIds: cleanData.authorIds,
+        publisherId: cleanData.publisherId,
+        volumes: cleanData.volumes,
+        locationId: cleanData.locationId,
+        stateId: cleanData.stateId,
+        notes: cleanData.notes,
+        // isbn no se incluye porque no se puede cambiar en edición
+      };
+      await (onSubmit as (data: UpdateResourceRequest) => Promise<void>)(updateData);
+    } else {
+      // Para creación, incluir todos los campos requeridos
+      const createData: CreateResourceRequest = {
+        title: cleanData.title,
+        typeId: cleanData.typeId,
+        categoryId: cleanData.categoryId,
+        locationId: cleanData.locationId,
+        stateId: cleanData.stateId,
+        authorIds: cleanData.authorIds,
+        publisherId: cleanData.publisherId,
+        volumes: cleanData.volumes,
+        isbn: cleanData.isbn,
+        notes: cleanData.notes,
+      };
+      await (onSubmit as (data: CreateResourceRequest) => Promise<void>)(createData);
+    }
   });
 
   const canSubmit = isValid && isDirty && businessRulesErrors.length === 0;
