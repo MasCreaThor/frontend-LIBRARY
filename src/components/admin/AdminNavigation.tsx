@@ -21,7 +21,7 @@ import {
   FiCheckCircle,
   FiUsers,
   FiSettings,
-  FiBarChart3,
+  FiBarChart,
 } from 'react-icons/fi';
 
 export interface AdminQuickAction {
@@ -91,7 +91,7 @@ const systemActions: AdminQuickAction[] = [
   {
     title: 'Reportes Avanzados',
     description: 'Analytics y estadísticas',
-    icon: FiBarChart3,
+    icon: FiBarChart,
     href: '/admin/analytics',
     color: 'cyan',
     badge: 'Próximamente',

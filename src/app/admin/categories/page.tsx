@@ -26,7 +26,8 @@ import {
   StatHelpText,
 } from '@chakra-ui/react';
 import { useState } from 'react';
-import { FiGrid, FiPlus, FiBarChart3, FiPalette } from 'react-icons/fi';
+import { FiGrid, FiPlus, FiBarChart } from 'react-icons/fi';
+import { MdPalette } from 'react-icons/md';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { CategoryList, CategoryForm } from '@/components/admin/categories';
 import { AdminRoute } from '@/components/auth/ProtectedRoute';
@@ -125,7 +126,7 @@ export default function CategoriesPage() {
                 <Text fontWeight="medium" color="gray.700">
                   Estadísticas de Categorías
                 </Text>
-                <Icon as={FiBarChart3} color="gray.500" />
+                <Icon as={FiBarChart} color="gray.500" />
               </HStack>
               
               <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4}>
@@ -188,7 +189,7 @@ export default function CategoriesPage() {
           <ModalContent>
             <ModalHeader>
               <HStack spacing={2}>
-                <Icon as={FiPalette} color="blue.500" />
+                <Icon as={MdPalette} color="blue.500" />
                 <Text>Nueva Categoría</Text>
               </HStack>
             </ModalHeader>
@@ -210,7 +211,7 @@ export default function CategoriesPage() {
           <ModalContent>
             <ModalHeader>
               <HStack spacing={2}>
-                <Icon as={FiPalette} color="blue.500" />
+                <Icon as={MdPalette} color="blue.500" />
                 <Text>Editar Categoría</Text>
               </HStack>
             </ModalHeader>

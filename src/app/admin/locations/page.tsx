@@ -25,7 +25,7 @@ import {
   StatHelpText,
 } from '@chakra-ui/react';
 import { useState } from 'react';
-import { FiMapPin, FiPlus, FiBarChart3 } from 'react-icons/fi';
+import { FiMapPin, FiPlus, FiBarChart } from 'react-icons/fi';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { LocationList, LocationForm } from '@/components/admin/locations';
 import { AdminRoute } from '@/components/auth/ProtectedRoute';
@@ -113,7 +113,7 @@ export default function LocationsPage() {
             <Box>
               <HStack justify="space-between" align="center" mb={4}>
                 <Text fontWeight="medium" color="gray.700">Estadísticas de Ubicaciones</Text>
-                <Icon as={FiBarChart3} color="gray.500" />
+                <Icon as={FiBarChart} color="gray.500" />
               </HStack>
               
               <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4}>
