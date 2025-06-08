@@ -1,6 +1,7 @@
 // src/components/admin/categories/CategoryList.tsx
 'use client';
 
+
 import {
   Box,
   VStack,
@@ -269,11 +270,16 @@ export function CategoryList({
     }
   };
 
-  // Estados derivados
+  // Estados derivados - CORREGIDO: Usar optional chaining completo
   const categories: Category[] = categoriesResponse?.data || [];
-  const totalCount = categoriesResponse?.pagination.total || 0;
+  const totalCount = categoriesResponse?.pagination?.total || 0; // ✅ CORREGIDO
   const isLoadingData = isLoading || isRefetching;
   const isMutating = deleteMutation.isPending;
+
+  // Log para debugging (remover en producción)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('CategoryList - categoriesResponse:', categoriesResponse);
+  }
 
   return (
     <VStack spacing={6} align="stretch">

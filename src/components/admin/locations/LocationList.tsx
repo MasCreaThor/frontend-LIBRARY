@@ -267,10 +267,16 @@ export function LocationList({
     }
   };
 
+  // Estados derivados - CORREGIDO: Usar optional chaining completo
   const locations: Location[] = locationsResponse?.data || [];
-  const totalCount = locationsResponse?.pagination.total || 0;
+  const totalCount = locationsResponse?.pagination?.total || 0; // ✅ CORREGIDO
   const isLoadingData = isLoading || isRefetching;
   const isMutating = deleteMutation.isPending;
+
+  // Log para debugging (remover en producción)
+  if (process.env.NODE_ENV === 'development') {
+    console.log('LocationList - locationsResponse:', locationsResponse);
+  }
 
   return (
     <VStack spacing={6} align="stretch">
