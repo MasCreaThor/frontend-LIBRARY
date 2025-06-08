@@ -23,14 +23,46 @@ export const CATEGORY_QUERY_KEYS = {
  */
 export function useCategories(
   filters: CategoryFilters = {},
-  options?: Omit<UseQueryOptions<PaginatedResponse<Category>>, 'queryKey' | 'queryFn'>
+  options?: Omit<UseQueryOptions<PaginatedResponse<Category> | Category[]>, 'queryKey' | 'queryFn'>
 ) {
   return useQuery({
     queryKey: CATEGORY_QUERY_KEYS.categoriesList(filters),
-    queryFn: () => CategoryService.getCategories(filters),
+    queryFn: async () => {
+      try {
+        // Intentar obtener respuesta paginada
+        const response = await CategoryService.getCategories(filters);
+        return response;
+      } catch (error: any) {
+        // Si el backend aún no soporta paginación, manejar como array simple
+        if (error?.response?.status === 404 || error?.message?.includes('pagination')) {
+          console.warn('API de categorías no soporta paginación, usando formato simple');
+          
+          // Hacer una llamada más simple si existe endpoint alternativo
+          try {
+            const simpleResponse = await fetch('/api/categories');
+            if (simpleResponse.ok) {
+              const data = await simpleResponse.json();
+              return Array.isArray(data) ? data : data.data || [];
+            }
+          } catch (simpleError) {
+            console.error('Error en llamada simple a categorías:', simpleError);
+          }
+        }
+        
+        throw error;
+      }
+    },
     staleTime: 5 * 60 * 1000, // 5 minutos
     gcTime: 10 * 60 * 1000, // 10 minutos
-    retry: 2,
+    retry: (failureCount, error: any) => {
+      // No reintentar en errores 4xx
+      if (error?.response?.status >= 400 && error?.response?.status < 500) {
+        return false;
+      }
+      return failureCount < 2;
+    },
+    // En caso de error, intentar con datos en cache o devolver array vacío
+    placeholderData: [] as Category[],
     ...options,
   });
 }
@@ -61,10 +93,23 @@ export function useCategoryStats(
 ) {
   return useQuery({
     queryKey: CATEGORY_QUERY_KEYS.categoryStats,
-    queryFn: CategoryService.getCategoryStats,
+    queryFn: async () => {
+      try {
+        return await CategoryService.getCategoryStats();
+      } catch (error: any) {
+        console.warn('Error obteniendo estadísticas de categorías:', error);
+        // Devolver estadísticas por defecto en caso de error
+        return {
+          total: 0,
+          active: 0,
+          inactive: 0,
+          resourceCount: {},
+        };
+      }
+    },
     staleTime: 10 * 60 * 1000,
     gcTime: 15 * 60 * 1000,
-    retry: 2,
+    retry: 1, // Menos reintentos para estadísticas
     ...options,
   });
 }

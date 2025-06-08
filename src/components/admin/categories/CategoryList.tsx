@@ -1,7 +1,6 @@
 // src/components/admin/categories/CategoryList.tsx
 'use client';
 
-
 import {
   Box,
   VStack,
@@ -270,15 +269,33 @@ export function CategoryList({
     }
   };
 
-  // Estados derivados - CORREGIDO: Usar optional chaining completo
-  const categories: Category[] = categoriesResponse?.data || [];
-  const totalCount = categoriesResponse?.pagination?.total || 0; // ✅ CORREGIDO
+  // Estados derivados - CORREGIDO para manejar ambos formatos
+  let categories: Category[] = [];
+  let totalCount = 0;
+
+  if (categoriesResponse) {
+    // Verificar si la respuesta es un array directo o un objeto paginado
+    if (Array.isArray(categoriesResponse)) {
+      // El backend retorna directamente un array
+      categories = categoriesResponse as Category[];
+      totalCount = categories.length;
+    } else if (categoriesResponse.data && Array.isArray(categoriesResponse.data)) {
+      // El backend retorna un objeto paginado
+      categories = categoriesResponse.data;
+      totalCount = categoriesResponse.pagination?.total || categoriesResponse.data.length;
+    } else {
+      console.warn('Formato de respuesta inesperado:', categoriesResponse);
+    }
+  }
+
   const isLoadingData = isLoading || isRefetching;
   const isMutating = deleteMutation.isPending;
 
   // Log para debugging (remover en producción)
   if (process.env.NODE_ENV === 'development') {
     console.log('CategoryList - categoriesResponse:', categoriesResponse);
+    console.log('CategoryList - categories:', categories);
+    console.log('CategoryList - totalCount:', totalCount);
   }
 
   return (
@@ -324,7 +341,7 @@ export function CategoryList({
           </HStack>
         </HStack>
 
-        {/* Filtro de estado */}
+        {/* Filtro de estado y contador */}
         <HStack spacing={4}>
           <FormControl display="flex" alignItems="center" w="auto">
             <FormLabel htmlFor="active-filter" mb={0} fontSize="sm">

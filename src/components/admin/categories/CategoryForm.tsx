@@ -26,7 +26,8 @@ import {
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { FiCheck, FiX, FiGrid, FiPalette } from 'react-icons/fi';
+import { FiCheck, FiX, FiGrid } from 'react-icons/fi';
+import { MdPalette } from 'react-icons/md'; // ✅ CORREGIDO: Usar MdPalette desde react-icons/md
 import { useCreateCategory, useUpdateCategory } from '@/hooks/useCategories';
 import type { Category, CreateCategoryRequest, UpdateCategoryRequest } from '@/services/category.service';
 
@@ -138,7 +139,7 @@ export function CategoryForm(props: CategoryFormProps) {
             {/* Header */}
             <Box>
               <HStack spacing={3} mb={2}>
-                <Icon as={FiGrid} color="blue.500" boxSize={6} />
+                <Icon as={MdPalette} color="blue.500" boxSize={6} />
                 <Text fontSize="lg" fontWeight="semibold" color="gray.800">
                   {isEdit ? 'Editar Categoría' : 'Nueva Categoría'}
                 </Text>
