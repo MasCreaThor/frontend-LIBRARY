@@ -94,22 +94,23 @@ export function useCategoryStats(
   return useQuery({
     queryKey: CATEGORY_QUERY_KEYS.categoryStats,
     queryFn: async () => {
-      try {
-        return await CategoryService.getCategoryStats();
-      } catch (error: any) {
-        console.warn('Error obteniendo estadísticas de categorías:', error);
-        // Devolver estadísticas por defecto en caso de error
-        return {
-          total: 0,
-          active: 0,
-          inactive: 0,
-          resourceCount: {},
-        };
-      }
+      return await CategoryService.getCategoryStats();
     },
     staleTime: 10 * 60 * 1000,
     gcTime: 15 * 60 * 1000,
     retry: 1, // Menos reintentos para estadísticas
+    
+    // Configuración para manejar errores de manera más robusta
+    retryOnMount: false,
+    refetchOnWindowFocus: false,
+    
+    // Datos por defecto en caso de error
+    placeholderData: {
+      total: 0,
+      active: 0,
+      inactive: 0,
+      resourceCount: {},
+    },
     ...options,
   });
 }

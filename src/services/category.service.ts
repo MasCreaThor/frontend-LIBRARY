@@ -134,27 +134,58 @@ export class CategoryService {
     resourceCount: Record<string, number>;
   }> {
     try {
+      // Intentar obtener estadísticas del endpoint específico
       const response = await axiosInstance.get<ApiResponse<any>>(
         `${CATEGORY_ENDPOINTS.CATEGORIES}/stats`
       );
-
+  
       if (response.data.success && response.data.data) {
         return response.data.data;
       }
-
-      return {
-        total: 0,
-        active: 0,
-        inactive: 0,
-        resourceCount: {},
-      };
-    } catch (error) {
-      return {
-        total: 0,
-        active: 0,
-        inactive: 0,
-        resourceCount: {},
-      };
+  
+      // Si el endpoint no retorna datos válidos, calcular desde la lista
+      throw new Error('Endpoint de estadísticas no disponible');
+    } catch (error: any) {
+      console.warn('Endpoint de estadísticas no disponible, calculando desde datos existentes...');
+      
+      // Fallback: calcular estadísticas desde la lista de categorías
+      try {
+        const categoriesResponse = await this.getCategories({ limit: 1000 });
+        
+        // Verificar si la respuesta es paginada o array directo
+        let categories: Category[];
+        if (Array.isArray(categoriesResponse)) {
+          categories = categoriesResponse as any;
+        } else if (categoriesResponse.data) {
+          categories = categoriesResponse.data;
+        } else {
+          categories = [];
+        }
+        
+        const total = categories.length;
+        const active = categories.filter(cat => cat.active).length;
+        const inactive = total - active;
+        
+        // Por ahora, resourceCount será vacío ya que requiere una relación con recursos
+        const resourceCount: Record<string, number> = {};
+        
+        return {
+          total,
+          active,
+          inactive,
+          resourceCount,
+        };
+      } catch (fallbackError) {
+        console.error('Error calculando estadísticas de categorías:', fallbackError);
+        
+        // Último fallback: devolver estadísticas vacías
+        return {
+          total: 0,
+          active: 0,
+          inactive: 0,
+          resourceCount: {},
+        };
     }
   }
+}
 }
