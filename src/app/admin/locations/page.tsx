@@ -1,4 +1,4 @@
-// src/app/admin/locations/page.tsx
+// src/app/admin/locations/page.tsx - SIN ESTADÍSTICAS
 'use client';
 
 import {
@@ -16,20 +16,13 @@ import {
   ModalBody,
   ModalCloseButton,
   Icon,
-  SimpleGrid,
-  Card,
-  CardBody,
-  Stat,
-  StatLabel,
-  StatNumber,
-  StatHelpText,
 } from '@chakra-ui/react';
 import { useState } from 'react';
-import { FiMapPin, FiPlus, FiBarChart } from 'react-icons/fi';
+import { FiMapPin, FiPlus } from 'react-icons/fi';
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { LocationList, LocationForm } from '@/components/admin/locations';
 import { AdminRoute } from '@/components/auth/ProtectedRoute';
-import { useCreateLocation, useUpdateLocation, useLocationStats } from '@/hooks/useLocations';
+import { useCreateLocation, useUpdateLocation } from '@/hooks/useLocations';
 import type { Location, CreateLocationRequest, UpdateLocationRequest } from '@/services/location.service';
 
 export default function LocationsPage() {
@@ -40,7 +33,6 @@ export default function LocationsPage() {
 
   const createMutation = useCreateLocation();
   const updateMutation = useUpdateLocation();
-  const { data: stats } = useLocationStats();
 
   const handleCreateLocation = async (data: CreateLocationRequest) => {
     try {
@@ -79,6 +71,7 @@ export default function LocationsPage() {
     <AdminRoute>
       <DashboardLayout>
         <VStack spacing={6} align="stretch">
+          {/* Header */}
           <Box>
             <HStack justify="space-between" align="start" mb={4}>
               <VStack align="start" spacing={2}>
@@ -91,7 +84,7 @@ export default function LocationsPage() {
                       Gestión de Ubicaciones
                     </Heading>
                     <Text color="gray.600">
-                      Administra las ubicaciones físicas de los recursos
+                      Administra las ubicaciones físicas donde se almacenan los recursos
                     </Text>
                   </VStack>
                 </HStack>
@@ -109,59 +102,7 @@ export default function LocationsPage() {
             </HStack>
           </Box>
 
-          {stats && (
-            <Box>
-              <HStack justify="space-between" align="center" mb={4}>
-                <Text fontWeight="medium" color="gray.700">Estadísticas de Ubicaciones</Text>
-                <Icon as={FiBarChart} color="gray.500" />
-              </HStack>
-              
-              <SimpleGrid columns={{ base: 2, md: 4 }} spacing={4}>
-                <Card size="sm">
-                  <CardBody>
-                    <Stat>
-                      <StatLabel fontSize="xs">Total</StatLabel>
-                      <StatNumber fontSize="2xl">{stats.total}</StatNumber>
-                      <StatHelpText fontSize="xs">ubicaciones registradas</StatHelpText>
-                    </Stat>
-                  </CardBody>
-                </Card>
-
-                <Card size="sm">
-                  <CardBody>
-                    <Stat>
-                      <StatLabel fontSize="xs">Activas</StatLabel>
-                      <StatNumber fontSize="2xl" color="green.600">{stats.active}</StatNumber>
-                      <StatHelpText fontSize="xs">en uso</StatHelpText>
-                    </Stat>
-                  </CardBody>
-                </Card>
-
-                <Card size="sm">
-                  <CardBody>
-                    <Stat>
-                      <StatLabel fontSize="xs">Inactivas</StatLabel>
-                      <StatNumber fontSize="2xl" color="gray.500">{stats.inactive}</StatNumber>
-                      <StatHelpText fontSize="xs">deshabilitadas</StatHelpText>
-                    </Stat>
-                  </CardBody>
-                </Card>
-
-                <Card size="sm">
-                  <CardBody>
-                    <Stat>
-                      <StatLabel fontSize="xs">Con Recursos</StatLabel>
-                      <StatNumber fontSize="2xl" color="green.600">
-                        {Object.keys(stats.resourceCount).length}
-                      </StatNumber>
-                      <StatHelpText fontSize="xs">tienen recursos</StatHelpText>
-                    </Stat>
-                  </CardBody>
-                </Card>
-              </SimpleGrid>
-            </Box>
-          )}
-
+          {/* Lista de ubicaciones */}
           <LocationList
             onLocationEdit={handleLocationEdit}
             onCreate={onCreateOpen}
@@ -169,6 +110,7 @@ export default function LocationsPage() {
           />
         </VStack>
 
+        {/* Modal de creación */}
         <Modal isOpen={isCreateOpen} onClose={onCreateClose} size="xl">
           <ModalOverlay />
           <ModalContent>
@@ -190,6 +132,7 @@ export default function LocationsPage() {
           </ModalContent>
         </Modal>
 
+        {/* Modal de edición */}
         <Modal isOpen={isEditOpen} onClose={handleCloseEdit} size="xl">
           <ModalOverlay />
           <ModalContent>

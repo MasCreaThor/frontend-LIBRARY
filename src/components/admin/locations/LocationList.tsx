@@ -1,4 +1,4 @@
-// src/components/admin/locations/LocationList.tsx
+// src/components/admin/locations/LocationList.tsx - CORREGIDO
 'use client';
 
 import {
@@ -87,12 +87,13 @@ function LocationCard({
         size="sm"
         _hover={{ shadow: 'md', transform: 'translateY(-2px)' }}
         transition="all 0.2s"
-        opacity={location.active ? 1 : 0.6}
+        opacity={location.active ? 1 : 0.7}
         border={location.active ? '1px solid' : '2px dashed'}
         borderColor={location.active ? 'gray.200' : 'gray.300'}
       >
         <CardBody p={4}>
           <VStack spacing={3} align="stretch" h="full">
+            {/* Header */}
             <HStack justify="space-between" align="start">
               <HStack spacing={2}>
                 <FiMapPin color="#38A169" size={16} />
@@ -112,6 +113,7 @@ function LocationCard({
               </Badge>
             </HStack>
 
+            {/* Contenido */}
             <Box flex={1}>
               <Text
                 fontWeight="semibold"
@@ -139,6 +141,7 @@ function LocationCard({
               </Text>
             </Box>
 
+            {/* Acciones */}
             {showActions && (
               <HStack justify="flex-end" pt={2}>
                 <Menu>
@@ -174,6 +177,7 @@ function LocationCard({
         </CardBody>
       </Card>
 
+      {/* Dialog de confirmación para eliminar */}
       <DeleteConfirmDialog
         isOpen={isDeleteOpen}
         onClose={onDeleteClose}
@@ -219,11 +223,12 @@ export function LocationList({
     search: '',
     active: undefined,
     page: 1,
-    limit: 20,
+    limit: 50, // Aumentado para obtener más ubicaciones de una vez
     sortBy: 'name',
     sortOrder: 'asc',
   });
 
+  // ✅ CORREGIDO: Usar locationsResponse en lugar de categoriesResponse
   const {
     data: locationsResponse,
     isLoading,
@@ -235,6 +240,7 @@ export function LocationList({
 
   const deleteMutation = useDeleteLocation();
 
+  // Handlers
   const handleSearchChange = (value: string) => {
     setFilters(prev => ({ ...prev, search: value, page: 1 }));
   };
@@ -267,33 +273,54 @@ export function LocationList({
     }
   };
 
-  // Estados derivados - CORREGIDO: Usar optional chaining completo
-  const locations: Location[] = locationsResponse?.data || [];
-  const totalCount = locationsResponse?.pagination?.total || 0; // ✅ CORREGIDO
+  // ✅ CORREGIDO: Variables y lógica para locations en lugar de categories
+  let locations: Location[] = [];
+  let totalCount = 0;
+
+  if (locationsResponse) {
+    // Verificar si la respuesta es un array directo o un objeto paginado
+    if (Array.isArray(locationsResponse)) {
+      // El backend retorna directamente un array
+      locations = locationsResponse as Location[];
+      totalCount = locations.length;
+    } else if (locationsResponse.data && Array.isArray(locationsResponse.data)) {
+      // El backend retorna un objeto paginado
+      locations = locationsResponse.data;
+      totalCount = locationsResponse.pagination?.total || locationsResponse.data.length;
+    } else {
+      console.warn('Formato de respuesta inesperado para ubicaciones:', locationsResponse);
+    }
+  }
+
   const isLoadingData = isLoading || isRefetching;
   const isMutating = deleteMutation.isPending;
 
   // Log para debugging (remover en producción)
   if (process.env.NODE_ENV === 'development') {
     console.log('LocationList - locationsResponse:', locationsResponse);
+    console.log('LocationList - locations:', locations);
+    console.log('LocationList - totalCount:', totalCount);
   }
 
   return (
     <VStack spacing={6} align="stretch">
+      {/* Filtros */}
       <VStack spacing={4} align="stretch">
         <HStack spacing={4}>
+          {/* Búsqueda */}
           <InputGroup flex={1}>
             <InputLeftElement pointerEvents="none">
               <FiSearch color="gray.400" />
             </InputLeftElement>
             <Input
-              placeholder="Buscar ubicaciones..."
+              placeholder="Buscar ubicaciones por nombre..."
               value={filters.search}
               onChange={(e) => handleSearchChange(e.target.value)}
               bg="white"
             />
           </InputGroup>
 
+          {/* Controles */}
           <HStack spacing={2}>
             <Button
               leftIcon={<FiRefreshCw />}
@@ -318,6 +345,7 @@ export function LocationList({
           </HStack>
         </HStack>
 
+        {/* Filtro de estado y contador */}
         <HStack spacing={4}>
           <FormControl display="flex" alignItems="center" w="auto">
             <FormLabel htmlFor="active-filter" mb={0} fontSize="sm">
@@ -340,6 +368,7 @@ export function LocationList({
         </HStack>
       </VStack>
 
+      {/* Estados de error */}
       {isError && (
         <Alert status="error" borderRadius="md">
           <AlertIcon />
@@ -352,7 +381,9 @@ export function LocationList({
         </Alert>
       )}
 
+      {/* Contenido principal */}
       <Box position="relative">
+        {/* Overlay de loading para mutaciones */}
         {isMutating && (
           <Box
             position="absolute"
@@ -371,6 +402,7 @@ export function LocationList({
           </Box>
         )}
 
+        {/* Lista de ubicaciones */}
         {isLoadingData ? (
           <LoadingGrid />
         ) : locations.length === 0 ? (
@@ -404,6 +436,23 @@ export function LocationList({
           </SimpleGrid>
         )}
       </Box>
+
+      {/* Información de ayuda */}
+      {!isLoadingData && locations.length > 0 && (
+        <Alert status="info" borderRadius="md">
+          <AlertIcon />
+          <Box>
+            <Text fontSize="sm" fontWeight="medium">
+              Consejos para ubicaciones
+            </Text>
+            <Text fontSize="xs" color="gray.600">
+              • Usa nombres descriptivos como "Estante A - Nivel 2" o "Armario Principal"<br />
+              • Los códigos cortos facilitan la identificación rápida<br />
+              • Las ubicaciones inactivas no aparecen en los formularios de recursos
+            </Text>
+          </Box>
+        </Alert>
+      )}
     </VStack>
   );
 }

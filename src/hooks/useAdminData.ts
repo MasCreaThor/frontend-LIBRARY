@@ -16,7 +16,6 @@ export {
   export {
     useLocations,
     useLocation,
-    useLocationStats,
     useCreateLocation,
     useUpdateLocation,
     useDeleteLocation,

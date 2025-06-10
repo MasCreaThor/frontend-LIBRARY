@@ -1,4 +1,4 @@
-// src/services/location.service.ts
+// src/services/location.service.ts - SIMPLIFICADO SIN ESTADÍSTICAS
 import axiosInstance from '@/lib/axios';
 import type { ApiResponse, PaginatedResponse } from '@/types/api.types';
 
@@ -43,7 +43,7 @@ export class LocationService {
   /**
    * Obtener todas las ubicaciones
    */
-  static async getLocations(filters: LocationFilters = {}): Promise<PaginatedResponse<Location>> {
+  static async getLocations(filters: LocationFilters = {}): Promise<PaginatedResponse<Location> | Location[]> {
     const params = new URLSearchParams();
     
     if (filters.search) params.append('search', filters.search);
@@ -53,15 +53,26 @@ export class LocationService {
     if (filters.sortBy) params.append('sortBy', filters.sortBy);
     if (filters.sortOrder) params.append('sortOrder', filters.sortOrder);
 
-    const response = await axiosInstance.get<ApiResponse<PaginatedResponse<Location>>>(
-      `${LOCATION_ENDPOINTS.LOCATIONS}?${params.toString()}`
-    );
+    const url = params.toString() 
+      ? `${LOCATION_ENDPOINTS.LOCATIONS}?${params.toString()}`
+      : LOCATION_ENDPOINTS.LOCATIONS;
 
-    if (response.data.success && response.data.data) {
-      return response.data.data;
+    try {
+      const response = await axiosInstance.get<ApiResponse<PaginatedResponse<Location>>>(url);
+
+      if (response.data.success && response.data.data) {
+        return response.data.data;
+      }
+
+      throw new Error(response.data.message || 'Error al obtener ubicaciones');
+    } catch (error: any) {
+      // Si el backend no soporta paginación, puede devolver un array directo
+      if (error?.response?.data && Array.isArray(error.response.data)) {
+        return error.response.data as Location[];
+      }
+      
+      throw error;
     }
-
-    throw new Error(response.data.message || 'Error al obtener ubicaciones');
   }
 
   /**
@@ -121,40 +132,6 @@ export class LocationService {
 
     if (!response.data.success) {
       throw new Error(response.data.message || 'Error al eliminar ubicación');
-    }
-  }
-
-  /**
-   * Obtener estadísticas de ubicaciones
-   */
-  static async getLocationStats(): Promise<{
-    total: number;
-    active: number;
-    inactive: number;
-    resourceCount: Record<string, number>;
-  }> {
-    try {
-      const response = await axiosInstance.get<ApiResponse<any>>(
-        `${LOCATION_ENDPOINTS.LOCATIONS}/stats`
-      );
-
-      if (response.data.success && response.data.data) {
-        return response.data.data;
-      }
-
-      return {
-        total: 0,
-        active: 0,
-        inactive: 0,
-        resourceCount: {},
-      };
-    } catch (error) {
-      return {
-        total: 0,
-        active: 0,
-        inactive: 0,
-        resourceCount: {},
-      };
     }
   }
 }
