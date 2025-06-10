@@ -39,7 +39,6 @@ export {
   export {
     useResourceStates,
     useResourceState,
-    useResourceStateStats,
     useCreateResourceState,
     useUpdateResourceState,
     useActivateResourceState,

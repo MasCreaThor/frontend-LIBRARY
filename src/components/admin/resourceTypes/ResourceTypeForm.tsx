@@ -1,4 +1,4 @@
-// src/components/admin/resourceTypes/ResourceTypeForm.tsx
+// src/components/admin/resourceTypes/ResourceTypeForm.tsx - CORREGIDO
 'use client';
 
 import {
@@ -205,9 +205,9 @@ export function ResourceTypeForm(props: ResourceTypeFormProps) {
                 </FormControl>
               )}
 
-              {/* Mostrar tipo actual si es edición */}
+              {/* Mostrar tipo actual si es edición - CORREGIDO */}
               {isEdit && selectedTypeConfig && (
-                <Box>
+                <FormControl>
                   <FormLabel>Tipo de Recurso (No editable)</FormLabel>
                   <HStack spacing={3} p={3} bg="gray.50" borderRadius="md">
                     <Badge colorScheme={selectedTypeConfig.color} variant="solid">
@@ -220,7 +220,7 @@ export function ResourceTypeForm(props: ResourceTypeFormProps) {
                   <FormHelperText>
                     El tipo no se puede cambiar una vez creado
                   </FormHelperText>
-                </Box>
+                </FormControl>
               )}
 
               {/* Descripción personalizada */}

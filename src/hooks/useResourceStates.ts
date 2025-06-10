@@ -57,18 +57,6 @@ export function useResourceState(
 /**
  * Hook para obtener estadísticas de estados de recursos
  */
-export function useResourceStateStats(
-  options?: Omit<UseQueryOptions<Awaited<ReturnType<typeof ResourceStateService.getResourceStateStats>>>, 'queryKey' | 'queryFn'>
-) {
-  return useQuery({
-    queryKey: RESOURCE_STATE_QUERY_KEYS.resourceStateStats,
-    queryFn: ResourceStateService.getResourceStateStats,
-    staleTime: 15 * 60 * 1000,
-    gcTime: 30 * 60 * 1000,
-    retry: 2,
-    ...options,
-  });
-}
 
 /**
  * Hook para crear un estado de recurso
