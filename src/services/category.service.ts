@@ -1,4 +1,4 @@
-// src/services/category.service.ts
+// src/services/category.service.ts - VERSIÓN CORREGIDA
 import axiosInstance from '@/lib/axios';
 import type { ApiResponse, PaginatedResponse } from '@/types/api.types';
 
@@ -37,13 +37,28 @@ export interface CategoryFilters {
 const CATEGORY_ENDPOINTS = {
   CATEGORIES: '/categories',
   CATEGORY_BY_ID: (id: string) => `/categories/${id}`,
+  CATEGORY_STATS: '/categories/stats', // Añadido para claridad
 } as const;
 
 export class CategoryService {
   /**
+   * Verificar si el endpoint de estadísticas está disponible
+   */
+  private static async isStatsEndpointAvailable(): Promise<boolean> {
+    try {
+      // Usar HEAD request para verificar sin obtener datos
+      const response = await axiosInstance.head(CATEGORY_ENDPOINTS.CATEGORY_STATS);
+      return response.status === 200;
+    } catch (error: any) {
+      // Si retorna 404, 500, etc., el endpoint no está disponible
+      return false;
+    }
+  }
+
+  /**
    * Obtener todas las categorías
    */
-  static async getCategories(filters: CategoryFilters = {}): Promise<PaginatedResponse<Category>> {
+  static async getCategories(filters: CategoryFilters = {}): Promise<PaginatedResponse<Category> | Category[]> {
     const params = new URLSearchParams();
     
     if (filters.search) params.append('search', filters.search);
@@ -53,15 +68,26 @@ export class CategoryService {
     if (filters.sortBy) params.append('sortBy', filters.sortBy);
     if (filters.sortOrder) params.append('sortOrder', filters.sortOrder);
 
-    const response = await axiosInstance.get<ApiResponse<PaginatedResponse<Category>>>(
-      `${CATEGORY_ENDPOINTS.CATEGORIES}?${params.toString()}`
-    );
+    const url = params.toString() 
+      ? `${CATEGORY_ENDPOINTS.CATEGORIES}?${params.toString()}`
+      : CATEGORY_ENDPOINTS.CATEGORIES;
 
-    if (response.data.success && response.data.data) {
-      return response.data.data;
+    try {
+      const response = await axiosInstance.get<ApiResponse<PaginatedResponse<Category>>>(url);
+
+      if (response.data.success && response.data.data) {
+        return response.data.data;
+      }
+
+      throw new Error(response.data.message || 'Error al obtener categorías');
+    } catch (error: any) {
+      // Si el backend no soporta paginación, puede devolver un array directo
+      if (error?.response?.data && Array.isArray(error.response.data)) {
+        return error.response.data as Category[];
+      }
+      
+      throw error;
     }
-
-    throw new Error(response.data.message || 'Error al obtener categorías');
   }
 
   /**
@@ -125,7 +151,57 @@ export class CategoryService {
   }
 
   /**
-   * Obtener estadísticas de categorías
+   * Calcular estadísticas desde la lista de categorías (método local)
+   */
+  private static async calculateStatsFromCategories(): Promise<{
+    total: number;
+    active: number;
+    inactive: number;
+    resourceCount: Record<string, number>;
+  }> {
+    try {
+      console.log('📊 Calculando estadísticas de categorías desde datos locales...');
+      
+      const categoriesResponse = await this.getCategories({ limit: 1000 });
+      
+      // Normalizar la respuesta (puede ser array directo o paginado)
+      let categories: Category[];
+      if (Array.isArray(categoriesResponse)) {
+        categories = categoriesResponse;
+      } else if (categoriesResponse.data && Array.isArray(categoriesResponse.data)) {
+        categories = categoriesResponse.data;
+      } else {
+        categories = [];
+      }
+      
+      const total = categories.length;
+      const active = categories.filter(cat => cat.active !== false).length; // Por defecto, consideramos activo
+      const inactive = total - active;
+      
+      // Por ahora, resourceCount será vacío ya que requiere consultar la relación con recursos
+      const resourceCount: Record<string, number> = {};
+      
+      return {
+        total,
+        active,
+        inactive,
+        resourceCount,
+      };
+    } catch (error) {
+      console.error('❌ Error calculando estadísticas locales:', error);
+      
+      // Último fallback: estadísticas vacías
+      return {
+        total: 0,
+        active: 0,
+        inactive: 0,
+        resourceCount: {},
+      };
+    }
+  }
+
+  /**
+   * Obtener estadísticas de categorías con fallback robusto
    */
   static async getCategoryStats(): Promise<{
     total: number;
@@ -133,59 +209,28 @@ export class CategoryService {
     inactive: number;
     resourceCount: Record<string, number>;
   }> {
-    try {
-      // Intentar obtener estadísticas del endpoint específico
-      const response = await axiosInstance.get<ApiResponse<any>>(
-        `${CATEGORY_ENDPOINTS.CATEGORIES}/stats`
-      );
-  
-      if (response.data.success && response.data.data) {
-        return response.data.data;
-      }
-  
-      // Si el endpoint no retorna datos válidos, calcular desde la lista
-      throw new Error('Endpoint de estadísticas no disponible');
-    } catch (error: any) {
-      console.warn('Endpoint de estadísticas no disponible, calculando desde datos existentes...');
-      
-      // Fallback: calcular estadísticas desde la lista de categorías
+    // Intentar primero verificar si el endpoint está disponible
+    const isStatsAvailable = await this.isStatsEndpointAvailable();
+    
+    if (isStatsAvailable) {
       try {
-        const categoriesResponse = await this.getCategories({ limit: 1000 });
+        console.log('📊 Obteniendo estadísticas desde endpoint dedicado...');
         
-        // Verificar si la respuesta es paginada o array directo
-        let categories: Category[];
-        if (Array.isArray(categoriesResponse)) {
-          categories = categoriesResponse as any;
-        } else if (categoriesResponse.data) {
-          categories = categoriesResponse.data;
-        } else {
-          categories = [];
+        const response = await axiosInstance.get<ApiResponse<any>>(
+          CATEGORY_ENDPOINTS.CATEGORY_STATS
+        );
+
+        if (response.data.success && response.data.data) {
+          return response.data.data;
         }
-        
-        const total = categories.length;
-        const active = categories.filter(cat => cat.active).length;
-        const inactive = total - active;
-        
-        // Por ahora, resourceCount será vacío ya que requiere una relación con recursos
-        const resourceCount: Record<string, number> = {};
-        
-        return {
-          total,
-          active,
-          inactive,
-          resourceCount,
-        };
-      } catch (fallbackError) {
-        console.error('Error calculando estadísticas de categorías:', fallbackError);
-        
-        // Último fallback: devolver estadísticas vacías
-        return {
-          total: 0,
-          active: 0,
-          inactive: 0,
-          resourceCount: {},
-        };
+      } catch (error: any) {
+        console.warn('⚠️ Endpoint de estadísticas falló, usando fallback...');
+      }
+    } else {
+      console.log('🔄 Endpoint de estadísticas no disponible, calculando localmente...');
     }
+
+    // Fallback: calcular estadísticas desde la lista de categorías
+    return await this.calculateStatsFromCategories();
   }
-}
 }
