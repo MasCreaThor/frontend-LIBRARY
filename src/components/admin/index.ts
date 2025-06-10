@@ -11,6 +11,9 @@ export { CategoryList, CategoryForm } from './categories';
 // Componentes de ubicaciones
 export { LocationList, LocationForm } from './locations';
 
+// Componentes de tipos de recursos
+export { ResourceTypeList, ResourceTypeForm } from './resourceTypes';
+
 // Tipos relacionados (re-export de servicios)
 export type {
   Category,
