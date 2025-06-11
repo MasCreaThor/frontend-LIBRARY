@@ -1,4 +1,4 @@
-// src/app/admin/categories/page.tsx
+// src/app/admin/categories/page.tsx - VERSIÓN CORREGIDA
 'use client';
 
 import {
@@ -25,7 +25,8 @@ import { useCreateCategory, useUpdateCategory } from '@/hooks/useCategories';
 import type { Category, CreateCategoryRequest, UpdateCategoryRequest } from '@/services/category.service';
 
 export default function CategoriesPage() {
-  const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  // ✅ CORREGIDO: Cambiar de Category | null a Category | undefined
+  const [editingCategory, setEditingCategory] = useState<Category | undefined>(undefined);
   
   // Modales
   const { isOpen: isCreateOpen, onOpen: onCreateOpen, onClose: onCreateClose } = useDisclosure();
@@ -52,7 +53,8 @@ export default function CategoriesPage() {
         id: editingCategory._id,
         data,
       });
-      setEditingCategory(null);
+      // ✅ CORREGIDO: Usar undefined en lugar de null
+      setEditingCategory(undefined);
       onEditClose();
     } catch (error) {
       // Error manejado por el hook
@@ -65,7 +67,8 @@ export default function CategoriesPage() {
   };
 
   const handleCloseEdit = () => {
-    setEditingCategory(null);
+    // ✅ CORREGIDO: Usar undefined en lugar de null
+    setEditingCategory(undefined);
     onEditClose();
   };
 
@@ -131,21 +134,25 @@ export default function CategoriesPage() {
           </Modal>
 
           {/* Modal para editar categoría */}
-          <Modal isOpen={isEditOpen} onClose={handleCloseEdit} size="md">
-            <ModalOverlay />
-            <ModalContent>
-              <ModalHeader>Editar Categoría</ModalHeader>
-              <ModalCloseButton />
-              <ModalBody pb={6}>
-                <CategoryForm
-                  category={editingCategory}
-                  onSubmit={handleUpdateCategory}
-                  onCancel={handleCloseEdit}
-                  isLoading={updateMutation.isPending}
-                />
-              </ModalBody>
-            </ModalContent>
-          </Modal>
+          {/* ✅ CORREGIDO: Agregar conditional rendering para mayor seguridad */}
+          {editingCategory && (
+            <Modal isOpen={isEditOpen} onClose={handleCloseEdit} size="md">
+              <ModalOverlay />
+              <ModalContent>
+                <ModalHeader>Editar Categoría</ModalHeader>
+                <ModalCloseButton />
+                <ModalBody pb={6}>
+                  <CategoryForm
+                    category={editingCategory} // ✅ Ahora editingCategory es Category | undefined
+                    onSubmit={handleUpdateCategory}
+                    onCancel={handleCloseEdit}
+                    isLoading={updateMutation.isPending}
+                    isEdit={true}
+                  />
+                </ModalBody>
+              </ModalContent>
+            </Modal>
+          )}
         </VStack>
       </DashboardLayout>
     </AdminRoute>
