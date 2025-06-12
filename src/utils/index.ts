@@ -464,3 +464,8 @@ export const APP_CONSTANTS = {
     BIBLE: 'bible',
   },
 } as const;
+
+
+
+// src/utils/index.ts - Agregar a las exportaciones existentes
+export { ImageUtils } from './imageUtils';
