@@ -1,48 +1,34 @@
+// services/loan.service.ts
 import axiosInstance from '@/lib/axios';
 import {
   ApiResponse,
   PaginatedResponse,
+} from '@/types/api.types';
+import {
   Loan,
   LoanStatus,
   CreateLoanRequest,
   ReturnLoanRequest,
-  SearchFilters,
-} from '@/types/api.types';
+  LoanSearchFilters,
+  LoanStats,
+  CanBorrowResult,
+  ReturnLoanResponse,
+} from '@/types/loan.types';
 
 const LOAN_ENDPOINTS = {
   LOANS: '/loans',
   LOAN_BY_ID: (id: string) => `/loans/${id}`,
-  RETURN_LOAN: (id: string) => `/loans/${id}/return`,
+  RETURN_LOAN: '/returns',
+  MARK_AS_LOST: (id: string) => `/returns/${id}/mark-lost`,
   OVERDUE_LOANS: '/loans/overdue',
   ACTIVE_LOANS: '/loans/active',
   LOAN_HISTORY: '/loans/history',
   LOAN_STATS: '/loans/stats',
-  LOAN_STATUSES: '/loans/statuses',
+  LOAN_STATUSES: '/loan-statuses',
   PERSON_LOANS: (personId: string) => `/loans/person/${personId}`,
   RESOURCE_LOANS: (resourceId: string) => `/loans/resource/${resourceId}`,
+  CAN_BORROW: (personId: string) => `/loans/can-borrow/${personId}`,
 } as const;
-
-export interface LoanFilters extends SearchFilters {
-  status?: 'active' | 'returned' | 'overdue' | 'lost';
-  personId?: string;
-  resourceId?: string;
-  dateFrom?: string;
-  dateTo?: string;
-  daysOverdue?: number;
-}
-
-export interface LoanStats {
-  totalLoans: number;
-  activeLoans: number;
-  overdueLoans: number;
-  returnedLoans: number;
-  averageLoanDuration: number;
-  mostBorrowedResources: Array<{
-    resourceId: string;
-    title: string;
-    borrowCount: number;
-  }>;
-}
 
 export class LoanService {
   /**
@@ -64,7 +50,7 @@ export class LoanService {
   /**
    * Obtener todos los préstamos con filtros
    */
-  static async getLoans(filters: LoanFilters = {}): Promise<PaginatedResponse<Loan>> {
+  static async getLoans(filters: LoanSearchFilters = {}): Promise<PaginatedResponse<Loan>> {
     const params = new URLSearchParams();
 
     // Agregar parámetros de filtro
@@ -74,6 +60,7 @@ export class LoanService {
     if (filters.resourceId) params.append('resourceId', filters.resourceId);
     if (filters.dateFrom) params.append('dateFrom', filters.dateFrom);
     if (filters.dateTo) params.append('dateTo', filters.dateTo);
+    if (filters.isOverdue !== undefined) params.append('isOverdue', filters.isOverdue.toString());
     if (filters.daysOverdue) params.append('daysOverdue', filters.daysOverdue.toString());
     if (filters.page) params.append('page', filters.page.toString());
     if (filters.limit) params.append('limit', filters.limit.toString());
@@ -109,9 +96,9 @@ export class LoanService {
   /**
    * Procesar devolución de préstamo
    */
-  static async returnLoan(id: string, returnData: ReturnLoanRequest): Promise<Loan> {
-    const response = await axiosInstance.post<ApiResponse<Loan>>(
-      LOAN_ENDPOINTS.RETURN_LOAN(id),
+  static async returnLoan(returnData: ReturnLoanRequest): Promise<ReturnLoanResponse> {
+    const response = await axiosInstance.post<ApiResponse<ReturnLoanResponse>>(
+      LOAN_ENDPOINTS.RETURN_LOAN,
       returnData
     );
 
@@ -123,9 +110,25 @@ export class LoanService {
   }
 
   /**
+   * Marcar préstamo como perdido
+   */
+  static async markAsLost(id: string, observations: string): Promise<Loan> {
+    const response = await axiosInstance.put<ApiResponse<Loan>>(
+      LOAN_ENDPOINTS.MARK_AS_LOST(id),
+      { observations }
+    );
+
+    if (response.data.success && response.data.data) {
+      return response.data.data;
+    }
+
+    throw new Error(response.data.message || 'Error al marcar como perdido');
+  }
+
+  /**
    * Obtener préstamos vencidos
    */
-  static async getOverdueLoans(filters: LoanFilters = {}): Promise<PaginatedResponse<Loan>> {
+  static async getOverdueLoans(filters: LoanSearchFilters = {}): Promise<PaginatedResponse<Loan>> {
     const params = new URLSearchParams();
 
     if (filters.search) params.append('search', filters.search);
@@ -147,12 +150,11 @@ export class LoanService {
   /**
    * Obtener préstamos activos
    */
-  static async getActiveLoans(filters: LoanFilters = {}): Promise<PaginatedResponse<Loan>> {
+  static async getActiveLoans(filters: LoanSearchFilters = {}): Promise<PaginatedResponse<Loan>> {
     const params = new URLSearchParams();
 
     if (filters.search) params.append('search', filters.search);
     if (filters.personId) params.append('personId', filters.personId);
-    if (filters.resourceId) params.append('resourceId', filters.resourceId);
     if (filters.page) params.append('page', filters.page.toString());
     if (filters.limit) params.append('limit', filters.limit.toString());
 
@@ -168,19 +170,9 @@ export class LoanService {
   }
 
   /**
-   * Obtener historial de préstamos
-   */
-  static async getLoanHistory(filters: LoanFilters = {}): Promise<PaginatedResponse<Loan>> {
-    return this.getLoans({
-      ...filters,
-      status: 'returned',
-    });
-  }
-
-  /**
    * Obtener préstamos de una persona
    */
-  static async getPersonLoans(personId: string, filters: LoanFilters = {}): Promise<PaginatedResponse<Loan>> {
+  static async getPersonLoans(personId: string, filters: LoanSearchFilters = {}): Promise<PaginatedResponse<Loan>> {
     const params = new URLSearchParams();
 
     if (filters.status) params.append('status', filters.status);
@@ -203,7 +195,7 @@ export class LoanService {
   /**
    * Obtener préstamos de un recurso
    */
-  static async getResourceLoans(resourceId: string, filters: LoanFilters = {}): Promise<PaginatedResponse<Loan>> {
+  static async getResourceLoans(resourceId: string, filters: LoanSearchFilters = {}): Promise<PaginatedResponse<Loan>> {
     const params = new URLSearchParams();
 
     if (filters.status) params.append('status', filters.status);
@@ -256,81 +248,15 @@ export class LoanService {
   /**
    * Verificar si una persona puede pedir préstamos
    */
-  static async canPersonBorrow(personId: string): Promise<{
-    canBorrow: boolean;
-    reason?: string;
-    overdueCount?: number;
-    activeCount?: number;
-  }> {
-    try {
-      // Obtener préstamos activos de la persona
-      const activeLoans = await this.getPersonLoans(personId, { status: 'active', limit: 100 });
-      
-      // Obtener préstamos vencidos
-      const overdueLoans = await this.getPersonLoans(personId, { status: 'overdue', limit: 100 });
+  static async canPersonBorrow(personId: string): Promise<CanBorrowResult> {
+    const response = await axiosInstance.get<ApiResponse<CanBorrowResult>>(
+      LOAN_ENDPOINTS.CAN_BORROW(personId)
+    );
 
-      const overdueCount = overdueLoans.pagination.total;
-      const activeCount = activeLoans.pagination.total;
-
-      // Verificar si tiene préstamos vencidos
-      if (overdueCount > 0) {
-        return {
-          canBorrow: false,
-          reason: 'Tiene préstamos vencidos pendientes',
-          overdueCount,
-          activeCount,
-        };
-      }
-
-      // Verificar límite de préstamos activos (ejemplo: máximo 3)
-      const maxActiveLoans = 3;
-      if (activeCount >= maxActiveLoans) {
-        return {
-          canBorrow: false,
-          reason: `Ha alcanzado el límite máximo de ${maxActiveLoans} préstamos activos`,
-          overdueCount,
-          activeCount,
-        };
-      }
-
-      return {
-        canBorrow: true,
-        overdueCount,
-        activeCount,
-      };
-    } catch (error) {
-      return {
-        canBorrow: false,
-        reason: 'Error al verificar el estado de préstamos',
-      };
+    if (response.data.success && response.data.data) {
+      return response.data.data;
     }
-  }
 
-  /**
-   * Calcular días de retraso
-   */
-  static calculateOverdueDays(dueDate: string | Date): number {
-    const due = new Date(dueDate);
-    const today = new Date();
-    const diffTime = today.getTime() - due.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    return Math.max(0, diffDays);
-  }
-
-  /**
-   * Verificar si un préstamo está vencido
-   */
-  static isLoanOverdue(dueDate: string | Date): boolean {
-    return this.calculateOverdueDays(dueDate) > 0;
-  }
-
-  /**
-   * Calcular fecha de vencimiento (15 días después de la fecha de préstamo)
-   */
-  static calculateDueDate(loanDate: string | Date = new Date()): Date {
-    const loan = new Date(loanDate);
-    const due = new Date(loan);
-    due.setDate(due.getDate() + 15); // 15 días como se especifica en el backend
-    return due;
+    throw new Error(response.data.message || 'Error al verificar disponibilidad de préstamo');
   }
 }
