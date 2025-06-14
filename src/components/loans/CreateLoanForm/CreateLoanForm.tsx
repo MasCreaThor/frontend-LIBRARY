@@ -77,12 +77,12 @@ export function CreateLoanForm({
 
   const { checkCanBorrow, loading: loadingCanBorrow, error: canBorrowError } = useCanBorrow();
 
-  const handlePersonSelected = (person: Person) => {
+  const handlePersonSelected = (person: Person | null) => {
     setSelectedPerson(person);
     setError(null);
   };
 
-  const handleResourceSelected = (resource: Resource) => {
+  const handleResourceSelected = (resource: Resource | null) => {
     setSelectedResource(resource);
     setError(null);
   };
