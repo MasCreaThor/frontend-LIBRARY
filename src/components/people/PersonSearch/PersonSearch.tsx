@@ -19,19 +19,21 @@ import {
 import { useState, useEffect, useRef } from 'react';
 import { FiSearch } from 'react-icons/fi';
 import { Person, SearchFilters } from '@/types/api.types';
-import { PersonService } from '@/services/person.service';
+import { personService } from '@/services/person.service';
 
 import { useDebounce } from '@/hooks/useDebounce';
 
 interface PersonSearchProps {
-  onSelect: (person: Person) => void;
+  onPersonSelected: (person: Person) => void;
+  selectedPerson: Person | null;
   placeholder?: string;
   isDisabled?: boolean;
   filterActive?: boolean;
 }
 
 export function PersonSearch({
-  onSelect,
+  onPersonSelected,
+  selectedPerson,
   placeholder = "Buscar persona...",
   isDisabled = false,
   filterActive = true,
@@ -64,7 +66,7 @@ export function PersonSearch({
         filters.status = 'active';
       }
 
-      PersonService.getPeople(filters)
+      personService.getPeople(filters)
         .then((response) => {
           setResults(response.data);
           setIsOpen(true);
@@ -85,7 +87,7 @@ export function PersonSearch({
   }, [debouncedSearchTerm, filterActive]);
 
   const handleSelect = (person: Person) => {
-    onSelect(person);
+    onPersonSelected(person);
     const fullName = person.fullName || `${person.firstName} ${person.lastName}`;
     setSearchTerm(fullName);
     setIsOpen(false);

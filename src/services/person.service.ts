@@ -21,10 +21,12 @@ const PERSON_ENDPOINTS = {
 } as const;
 
 export class PersonService {
+  private readonly API_URL = '/api/people';
+
   /**
    * Crear una nueva persona
    */
-  static async createPerson(personData: CreatePersonRequest): Promise<Person> {
+  async createPerson(personData: CreatePersonRequest): Promise<Person> {
     const response = await axiosInstance.post<ApiResponse<Person>>(
       PERSON_ENDPOINTS.PEOPLE,
       personData
@@ -40,7 +42,7 @@ export class PersonService {
   /**
    * Obtener todas las personas con filtros
    */
-  static async getPeople(filters: SearchFilters = {}): Promise<PaginatedResponse<Person>> {
+  async getPeople(filters: SearchFilters = {}): Promise<PaginatedResponse<Person>> {
     const params = new URLSearchParams();
 
     // Agregar parámetros de filtro
@@ -66,7 +68,7 @@ export class PersonService {
   /**
    * Obtener persona por ID
    */
-  static async getPersonById(id: string): Promise<Person> {
+  async getPersonById(id: string): Promise<Person> {
     const response = await axiosInstance.get<ApiResponse<Person>>(
       PERSON_ENDPOINTS.PERSON_BY_ID(id)
     );
@@ -81,7 +83,7 @@ export class PersonService {
   /**
    * Obtener persona por número de documento
    */
-  static async getPersonByDocument(documentNumber: string): Promise<Person> {
+  async getPersonByDocument(documentNumber: string): Promise<Person> {
     const response = await axiosInstance.get<ApiResponse<Person>>(
       PERSON_ENDPOINTS.PERSON_BY_DOCUMENT(documentNumber)
     );
@@ -96,7 +98,7 @@ export class PersonService {
   /**
    * Actualizar persona
    */
-  static async updatePerson(id: string, personData: UpdatePersonRequest): Promise<Person> {
+  async updatePerson(id: string, personData: UpdatePersonRequest): Promise<Person> {
     const response = await axiosInstance.put<ApiResponse<Person>>(
       PERSON_ENDPOINTS.PERSON_BY_ID(id),
       personData
@@ -112,7 +114,7 @@ export class PersonService {
   /**
    * Activar persona
    */
-  static async activatePerson(id: string): Promise<Person> {
+  async activatePerson(id: string): Promise<Person> {
     const response = await axiosInstance.put<ApiResponse<Person>>(
       PERSON_ENDPOINTS.PERSON_ACTIVATE(id)
     );
@@ -127,7 +129,7 @@ export class PersonService {
   /**
    * Desactivar persona
    */
-  static async deactivatePerson(id: string): Promise<Person> {
+  async deactivatePerson(id: string): Promise<Person> {
     const response = await axiosInstance.put<ApiResponse<Person>>(
       PERSON_ENDPOINTS.PERSON_DEACTIVATE(id)
     );
@@ -142,7 +144,7 @@ export class PersonService {
   /**
    * Eliminar persona permanentemente
    */
-  static async deletePerson(id: string): Promise<void> {
+  async deletePerson(id: string): Promise<void> {
     const response = await axiosInstance.delete<ApiResponse<null>>(
       PERSON_ENDPOINTS.PERSON_BY_ID(id)
     );
@@ -155,7 +157,7 @@ export class PersonService {
   /**
    * Obtener estadísticas de personas
    */
-  static async getPersonStats(): Promise<{
+  async getPersonStats(): Promise<{
     total: number;
     students: number;
     teachers: number;
@@ -180,7 +182,7 @@ export class PersonService {
   /**
    * Obtener tipos de persona
    */
-  static async getPersonTypes(): Promise<PersonType[]> {
+  async getPersonTypes(): Promise<PersonType[]> {
     const response = await axiosInstance.get<ApiResponse<PersonType[]>>(
       PERSON_ENDPOINTS.PERSON_TYPES
     );
@@ -195,7 +197,7 @@ export class PersonService {
   /**
    * Obtener tipo de persona por ID
    */
-  static async getPersonTypeById(id: string): Promise<PersonType> {
+  async getPersonTypeById(id: string): Promise<PersonType> {
     const response = await axiosInstance.get<ApiResponse<PersonType>>(
       PERSON_ENDPOINTS.PERSON_TYPE_BY_ID(id)
     );
@@ -210,7 +212,7 @@ export class PersonService {
   /**
    * Buscar personas (búsqueda simple)
    */
-  static async searchPeople(query: string, limit = 10): Promise<Person[]> {
+  async searchPeople(query: string, limit = 10): Promise<Person[]> {
     const response = await this.getPeople({
       search: query,
       limit,
@@ -223,7 +225,7 @@ export class PersonService {
   /**
    * Validar número de documento único
    */
-  static async validateDocumentNumber(documentNumber: string, excludeId?: string): Promise<boolean> {
+  async validateDocumentNumber(documentNumber: string, excludeId?: string): Promise<boolean> {
     try {
       const person = await this.getPersonByDocument(documentNumber);
       // Si encuentra una persona y no es la que estamos excluyendo, el documento ya existe
@@ -234,3 +236,6 @@ export class PersonService {
     }
   }
 }
+
+// Exportar una instancia única del servicio
+export const personService = new PersonService();

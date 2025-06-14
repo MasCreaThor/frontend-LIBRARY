@@ -43,7 +43,7 @@ import { FiArrowLeft, FiCheck, FiX, FiCalendar, FiUser, FiBook, FiAlertTriangle,
 import { DashboardLayout } from '@/components/layout/DashboardLayout';
 import { AuthenticatedRoute } from '@/components/auth/ProtectedRoute';
 import { LoanHistory } from '@/components/loans';
-import { LoanService } from '@/services/loan.service';
+import { loanService } from '@/services/loan.service';
 import { useReturnLoan } from '@/hooks/useLoans';
 import { Loan } from '@/types/loan.types';
 import { DateUtils } from '@/utils';
@@ -79,7 +79,7 @@ export default function LoanDetailPage() {
     setError(null);
 
     try {
-      const loanData = await LoanService.getLoanById(loanId);
+      const loanData = await loanService.getLoanById(loanId);
       setLoan(loanData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Error al cargar préstamo');

@@ -1,4 +1,4 @@
-// components/loans/CreateLoanForm/CreateLoanForm.tsx
+// src/components/loans/CreateLoanForm/CreateLoanForm.tsx
 'use client';
 
 import {
@@ -13,6 +13,7 @@ import {
   FormControl,
   FormLabel,
   FormErrorMessage,
+  FormHelperText,
   VStack,
   HStack,
   Text,
@@ -28,14 +29,32 @@ import {
   NumberIncrementStepper,
   NumberDecrementStepper,
   useColorModeValue,
+  Spinner,
+  Card,
+  CardBody,
+  Divider,
+  Icon,
+  Tooltip,
+  Progress,
 } from '@chakra-ui/react';
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { PersonSearch } from '@/components/people';
 import { ResourceSearch } from '@/components/resources';
 import { Person } from '@/types/api.types';
 import { Resource } from '@/types/resource.types';
 import { CreateLoanRequest } from '@/types/loan.types';
-import { FiUser, FiBook, FiAlertTriangle, FiCheck } from 'react-icons/fi';
+import { useCanBorrow } from '@/hooks/useLoans';
+import { 
+  FiUser, 
+  FiBook, 
+  FiAlertTriangle, 
+  FiCheck, 
+  FiInfo, 
+  FiClock, 
+  FiCalendar,
+  FiFileText,
+  FiHash
+} from 'react-icons/fi';
 
 interface CreateLoanFormProps {
   isOpen: boolean;
@@ -52,164 +71,190 @@ export function CreateLoanForm({
 }: CreateLoanFormProps) {
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
   const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
-  const [quantity, setQuantity] = useState(1);
-  const [observations, setObservations] = useState('');
-  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [quantity, setQuantity] = useState<number>(1);
+  const [observations, setObservations] = useState<string>('');
+  const [error, setError] = useState<string | null>(null);
 
-  const cardBg = useColorModeValue('gray.50', 'gray.700');
+  const { checkCanBorrow, loading: loadingCanBorrow, error: canBorrowError } = useCanBorrow();
 
-  const validateForm = (): boolean => {
-    const newErrors: Record<string, string> = {};
+  const handlePersonSelected = (person: Person) => {
+    setSelectedPerson(person);
+    setError(null);
+  };
 
+  const handleResourceSelected = (resource: Resource) => {
+    setSelectedResource(resource);
+    setError(null);
+  };
+
+  const handleSubmit = async () => {
     if (!selectedPerson) {
-      newErrors.person = 'Debe seleccionar una persona';
+      setError('Debes seleccionar una persona');
+      return;
     }
 
     if (!selectedResource) {
-      newErrors.resource = 'Debe seleccionar un recurso';
+      setError('Debes seleccionar un recurso');
+      return;
     }
 
-    if (!selectedResource?.available) {
-      newErrors.resource = 'El recurso seleccionado no está disponible';
+    const canBorrowResult = await checkCanBorrow(selectedPerson._id);
+    if (!canBorrowResult?.canBorrow) {
+      setError(canBorrowResult?.reason || canBorrowError || 'La persona no puede realizar más préstamos');
+      return;
     }
 
-    if (quantity < 1 || quantity > 5) {
-      newErrors.quantity = 'La cantidad debe estar entre 1 y 5';
-    }
-
-    setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
-  };
-
-  const handleSubmit = () => {
-    if (!validateForm()) return;
-
-    const loanData: CreateLoanRequest = {
-      personId: selectedPerson!._id,
-      resourceId: selectedResource!._id,
+    onSubmit({
+      personId: selectedPerson._id,
+      resourceId: selectedResource._id,
       quantity,
       observations: observations.trim() || undefined,
-    };
-
-    onSubmit(loanData);
+    });
   };
 
   const handleClose = () => {
-    if (!isLoading) {
-      setSelectedPerson(null);
-      setSelectedResource(null);
-      setQuantity(1);
-      setObservations('');
-      setErrors({});
-      onClose();
-    }
+    setSelectedPerson(null);
+    setSelectedResource(null);
+    setQuantity(1);
+    setObservations('');
+    setError(null);
+    onClose();
   };
 
-  const canSubmit = selectedPerson && selectedResource && selectedResource.available && !isLoading;
+  // Calcular fecha de vencimiento
+  const dueDate = useMemo(() => {
+    const today = new Date();
+    const due = new Date(today);
+    due.setDate(due.getDate() + 15); // 15 días por defecto
+    return due.toLocaleDateString('es-ES', {
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
+  }, []);
+
+  // Obtener color del badge según disponibilidad
+  const getAvailabilityBadgeColor = (available: boolean) => {
+    return available ? 'green' : 'red';
+  };
+
+  // Obtener color del estado de préstamo
+  const getBorrowStatusColor = (canBorrow: boolean) => {
+    return canBorrow ? 'success' : 'warning';
+  };
 
   return (
     <Modal isOpen={isOpen} onClose={handleClose} size="xl">
       <ModalOverlay />
       <ModalContent>
         <ModalHeader>Crear Nuevo Préstamo</ModalHeader>
-        <ModalCloseButton isDisabled={isLoading} />
+        <ModalCloseButton />
         
         <ModalBody>
           <VStack spacing={6} align="stretch">
-            {/* Selección de persona */}
-            <FormControl isInvalid={!!errors.person}>
-              <FormLabel>Persona</FormLabel>
-              <PersonSearch
-                onSelect={setSelectedPerson}
-                placeholder="Buscar estudiante o docente..."
-                isDisabled={isLoading}
-                filterActive={true}
-              />
-              <FormErrorMessage>{errors.person}</FormErrorMessage>
-            </FormControl>
-
-            {/* Información de la persona seleccionada */}
-            {selectedPerson && (
-              <Box bg={cardBg} p={4} borderRadius="md">
-                <HStack spacing={3}>
-                  <Avatar size="sm" name={selectedPerson.fullName || `${selectedPerson.firstName} ${selectedPerson.lastName}`} />
-                  <VStack spacing={0} align="start" flex={1}>
-                    <Text fontWeight="bold">{selectedPerson.fullName || `${selectedPerson.firstName} ${selectedPerson.lastName}`}</Text>
-                    <Text fontSize="sm" color="gray.600">
-                      {selectedPerson.documentNumber} • {selectedPerson.grade}
-                    </Text>
-                  </VStack>
-                  <Badge 
-                    colorScheme={selectedPerson.active ? 'green' : 'red'}
-                    display="flex"
-                    alignItems="center"
-                    gap={1}
-                  >
-                    {selectedPerson.active ? <FiCheck size={12} /> : <FiAlertTriangle size={12} />}
-                    {selectedPerson.active ? 'Activo' : 'Inactivo'}
-                  </Badge>
-                </HStack>
-              </Box>
+            {error && (
+              <Alert status="error" borderRadius="md">
+                <AlertIcon />
+                <Text>{error}</Text>
+              </Alert>
             )}
 
+            {/* Información del préstamo */}
+            <Alert status="info" borderRadius="md">
+              <AlertIcon />
+              <Box>
+                <Text fontSize="sm" fontWeight="medium">
+                  Información del préstamo
+                </Text>
+                <Text fontSize="xs" mt={1}>
+                  El préstamo se registrará por 15 días calendario. 
+                  Fecha de vencimiento: <strong>{dueDate}</strong>
+                </Text>
+              </Box>
+            </Alert>
+
+            {/* Selección de persona */}
+            <FormControl isRequired>
+              <FormLabel>Persona</FormLabel>
+              <PersonSearch
+                onPersonSelected={handlePersonSelected}
+                selectedPerson={selectedPerson}
+                isDisabled={isLoading}
+              />
+            </FormControl>
+
             {/* Selección de recurso */}
-            <FormControl isInvalid={!!errors.resource}>
+            <FormControl isRequired>
               <FormLabel>Recurso</FormLabel>
               <ResourceSearch
-                onSelect={setSelectedResource}
-                placeholder="Buscar libro o recurso..."
+                onSelect={handleResourceSelected}
                 isDisabled={isLoading}
-                filterAvailable
+                filterAvailable={true}
               />
-              <FormErrorMessage>{errors.resource}</FormErrorMessage>
             </FormControl>
 
             {/* Información del recurso seleccionado */}
             {selectedResource && (
-              <Box bg={cardBg} p={4} borderRadius="md">
-                <HStack spacing={3} align="start">
-                  <FiBook size={20} />
-                  <VStack spacing={1} align="start" flex={1}>
-                    <Text fontWeight="bold">{selectedResource.title}</Text>
-                    {selectedResource.authors && selectedResource.authors.length > 0 && (
-                      <Text fontSize="sm" color="gray.600">
-                        {selectedResource.authors.map(a => a.name).join(', ')}
-                      </Text>
-                    )}
-                    {selectedResource.isbn && (
-                      <Text fontSize="xs" color="gray.500" fontFamily="mono">
-                        ISBN: {selectedResource.isbn}
-                      </Text>
+              <Card size="sm" variant="outline">
+                <CardBody>
+                  <VStack spacing={3} align="stretch">
+                    <HStack justify="space-between" align="start">
+                      <VStack align="start" spacing={1} flex={1}>
+                        <Text fontWeight="medium" fontSize="sm">
+                          {selectedResource.title}
+                        </Text>
+                        <Text fontSize="xs" color="gray.600">
+                          {selectedResource.authors && selectedResource.authors.length > 0 
+                            ? selectedResource.authors[0].name 
+                            : 'Autor no especificado'}
+                        </Text>
+                        {selectedResource.isbn && (
+                          <HStack spacing={1} fontSize="xs" color="gray.500">
+                            <Icon as={FiHash} />
+                            <Text>ISBN: {selectedResource.isbn}</Text>
+                          </HStack>
+                        )}
+                      </VStack>
+                      <Badge 
+                        colorScheme={getAvailabilityBadgeColor(selectedResource.available)}
+                        variant="subtle"
+                        fontSize="xs"
+                      >
+                        {selectedResource.available ? 'Disponible' : 'No disponible'}
+                      </Badge>
+                    </HStack>
+                    
+                    {/* Información adicional del recurso */}
+                    {selectedResource.category && (
+                      <HStack spacing={2} fontSize="xs">
+                        <Text color="gray.500">Categoría:</Text>
+                        <Badge size="sm" variant="outline">
+                          {selectedResource.category.name}
+                        </Badge>
+                      </HStack>
                     )}
                   </VStack>
-                  <Badge 
-                    colorScheme={selectedResource.available ? 'green' : 'red'}
-                    display="flex"
-                    alignItems="center"
-                    gap={1}
-                  >
-                    {selectedResource.available ? 'Disponible' : 'No disponible'}
-                  </Badge>
-                </HStack>
-
-                {!selectedResource.available && (
-                  <Alert status="error" mt={3} size="sm">
-                    <AlertIcon />
-                    <Text fontSize="sm">Este recurso no está disponible para préstamo</Text>
-                  </Alert>
-                )}
-              </Box>
+                </CardBody>
+              </Card>
             )}
 
+            <Divider />
+
             {/* Cantidad */}
-            <FormControl isInvalid={!!errors.quantity}>
-              <FormLabel>Cantidad</FormLabel>
+            <FormControl isInvalid={!!error}>
+              <FormLabel>
+                <HStack spacing={2}>
+                  <Icon as={FiHash} color="purple.500" />
+                  <Text>Cantidad</Text>
+                </HStack>
+              </FormLabel>
               <NumberInput
-                value={quantity}
-                onChange={(_, value) => setQuantity(value || 1)}
                 min={1}
                 max={5}
+                value={quantity}
+                onChange={(_, value) => setQuantity(value || 1)}
                 isDisabled={isLoading}
+                size="md"
               >
                 <NumberInputField />
                 <NumberInputStepper>
@@ -217,33 +262,90 @@ export function CreateLoanForm({
                   <NumberDecrementStepper />
                 </NumberInputStepper>
               </NumberInput>
-              <FormErrorMessage>{errors.quantity}</FormErrorMessage>
+              <FormErrorMessage>{error}</FormErrorMessage>
+              <FormHelperText>
+                Máximo 5 unidades por préstamo
+              </FormHelperText>
             </FormControl>
 
             {/* Observaciones */}
-            <FormControl>
-              <FormLabel>Observaciones (opcional)</FormLabel>
+            <FormControl isInvalid={!!error}>
+              <FormLabel>
+                <HStack spacing={2}>
+                  <Icon as={FiFileText} color="orange.500" />
+                  <Text>Observaciones</Text>
+                  <Text fontSize="xs" color="gray.500">(opcional)</Text>
+                </HStack>
+              </FormLabel>
               <Textarea
                 value={observations}
                 onChange={(e) => setObservations(e.target.value)}
-                placeholder="Agregar observaciones sobre el préstamo..."
-                rows={3}
+                placeholder="Comentarios adicionales sobre el préstamo..."
+                maxLength={500}
                 isDisabled={isLoading}
+                rows={3}
+                resize="vertical"
               />
+              <HStack justify="space-between" mt={1}>
+                <FormErrorMessage flex={1}>{error}</FormErrorMessage>
+                <Text fontSize="xs" color="gray.500">
+                  {observations.length}/500
+                </Text>
+              </HStack>
+              <FormHelperText>
+                Información adicional sobre el préstamo (opcional)
+              </FormHelperText>
             </FormControl>
+
+            {/* Resumen del préstamo */}
+            {selectedPerson && selectedResource && (
+              <Card bg={useColorModeValue('gray.50', 'gray.700')} variant="filled">
+                <CardBody>
+                  <VStack spacing={3} align="stretch">
+                    <HStack spacing={2}>
+                      <Icon as={FiCheck} color="green.500" />
+                      <Text fontSize="sm" fontWeight="medium">
+                        Resumen del préstamo
+                      </Text>
+                    </HStack>
+                    <VStack spacing={2} align="stretch" fontSize="sm">
+                      <HStack justify="space-between">
+                        <Text color="gray.600">Persona:</Text>
+                        <Text fontWeight="medium">
+                          {selectedPerson.firstName} {selectedPerson.lastName}
+                        </Text>
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Text color="gray.600">Recurso:</Text>
+                        <Text fontWeight="medium" textAlign="right">
+                          {selectedResource.title}
+                        </Text>
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Text color="gray.600">Cantidad:</Text>
+                        <Text fontWeight="medium">{quantity}</Text>
+                      </HStack>
+                      <HStack justify="space-between">
+                        <Text color="gray.600">Fecha límite:</Text>
+                        <Text fontWeight="medium">{dueDate}</Text>
+                      </HStack>
+                    </VStack>
+                  </VStack>
+                </CardBody>
+              </Card>
+            )}
           </VStack>
         </ModalBody>
 
         <ModalFooter>
-          <Button mr={3} onClick={handleClose} isDisabled={isLoading}>
+          <Button variant="ghost" mr={3} onClick={handleClose}>
             Cancelar
           </Button>
           <Button
             colorScheme="blue"
             onClick={handleSubmit}
-            isLoading={isLoading}
-            isDisabled={!canSubmit}
-            loadingText="Creando préstamo..."
+            isLoading={isLoading || loadingCanBorrow}
+            isDisabled={!selectedPerson || !selectedResource || loadingCanBorrow}
           >
             Crear Préstamo
           </Button>
