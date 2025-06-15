@@ -161,19 +161,50 @@ export class LoanService {
   static async getLoanById(id: string): Promise<LoanResponse> {
     try {
       console.log('🔍 LoanService: Obteniendo préstamo por ID:', id);
-
+  
       const response = await axiosInstance.get<LoanDetailResponse>(
         LOAN_ENDPOINTS.LOAN_BY_ID(id)
       );
       
       if (response.data.success && response.data.data) {
         console.log('✅ LoanService: Préstamo obtenido exitosamente');
-        return response.data.data;
+        
+        // CORRECCIÓN: Verificar que la respuesta tiene la estructura correcta
+        const loanResponse = response.data.data;
+        
+        // Validar que la respuesta contiene las propiedades esperadas
+        if (!loanResponse.loan) {
+          console.error('❌ LoanService: Respuesta del servidor no contiene propiedad "loan"');
+          throw new Error('Respuesta del servidor inválida: falta información del préstamo');
+        }
+        
+        if (!loanResponse.person) {
+          console.error('❌ LoanService: Respuesta del servidor no contiene propiedad "person"');
+          throw new Error('Respuesta del servidor inválida: falta información de la persona');
+        }
+        
+        if (!loanResponse.resource) {
+          console.error('❌ LoanService: Respuesta del servidor no contiene propiedad "resource"');
+          throw new Error('Respuesta del servidor inválida: falta información del recurso');
+        }
+        
+        if (!loanResponse.status) {
+          console.error('❌ LoanService: Respuesta del servidor no contiene propiedad "status"');
+          throw new Error('Respuesta del servidor inválida: falta información del estado');
+        }
+        
+        console.log('✅ LoanService: Estructura de respuesta validada correctamente');
+        return loanResponse;
       }
       
       throw new Error(response.data.message || 'Error al obtener préstamo');
     } catch (error: any) {
-      console.error('❌ LoanService: Error al obtener préstamo por ID:', error);
+      console.error('❌ LoanService: Error al obtener préstamo por ID:', {
+        error: error.message,
+        status: error.response?.status,
+        data: error.response?.data,
+        loanId: id
+      });
       throw error;
     }
   }
