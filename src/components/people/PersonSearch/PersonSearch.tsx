@@ -1,4 +1,4 @@
-// src/components/people/PersonSearch/PersonSearch.tsx - VERSIÓN MEJORADA
+// src/components/people/PersonSearch/PersonSearch.tsx - VERSIÓN CORREGIDA
 'use client';
 
 import {
@@ -24,7 +24,7 @@ import {
 import { useState, useEffect, useRef } from 'react';
 import { FiSearch, FiAlertCircle, FiRefreshCw } from 'react-icons/fi';
 import { Person, SearchFilters } from '@/types/api.types';
-import { personService } from '@/services/person.service';
+import { PersonService } from '@/services/person.service'; // CORRECCIÓN: Importar la clase
 import { useDebounce } from '@/hooks/useDebounce';
 
 interface PersonSearchProps {
@@ -89,13 +89,15 @@ export function PersonSearch({
         filters 
       });
 
-      personService.getPeople(filters)
+      // CORRECCIÓN: Usar el método estático de la clase y manejar PaginatedResponse
+      PersonService.getPeople(filters)
         .then((response) => {
           console.log('✅ PersonSearch: Resultados obtenidos:', {
             count: response.data?.length || 0,
             total: response.pagination?.total || 0
           });
           
+          // CORRECCIÓN: La respuesta es PaginatedResponse<Person>, extraer data
           setResults(response.data || []);
           setIsOpen(true);
           setSelectedIndex(-1);

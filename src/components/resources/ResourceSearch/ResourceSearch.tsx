@@ -1,4 +1,4 @@
-// src/components/resources/ResourceSearch/ResourceSearch.tsx - VERSIÓN MEJORADA
+// src/components/resources/ResourceSearch/ResourceSearch.tsx - VERSIÓN CORREGIDA
 'use client';
 
 import {
@@ -81,9 +81,9 @@ export function ResourceSearch({
         limit: 10,
       };
       
-      // Aplicar filtro de disponibilidad
+      // CORRECCIÓN: Aplicar filtro de disponibilidad correctamente
       if (filterAvailable || showOnlyAvailable) {
-        filters.available = true; // Solo recursos disponibles
+        filters.availability = 'available'; // Usar el parámetro correcto
       }
 
       console.log('🔍 ResourceSearch: Iniciando búsqueda:', { 
@@ -91,14 +91,16 @@ export function ResourceSearch({
         filters 
       });
 
+      // CORRECCIÓN: Usar el método estático correctamente y manejar PaginatedResponse
       ResourceService.getResources(filters)
         .then((response) => {
           console.log('✅ ResourceSearch: Resultados obtenidos:', {
             count: response.data?.length || 0,
-            total: response.data?.length || 0,
-            success: response.success
+            total: response.pagination?.total || 0,
+            success: true
           });
           
+          // CORRECCIÓN: La respuesta es PaginatedResponse<Resource>, extraer data
           setResults(response.data || []);
           setIsOpen(true);
           setSelectedIndex(-1);

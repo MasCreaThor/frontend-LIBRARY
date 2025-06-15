@@ -25,7 +25,7 @@ import type {
 } from '@/types/resource.types';
 
 // Importar ApiResponse para respuestas específicas
-import type { ApiResponse } from '@/types/api.types';
+import type { ApiResponse, PaginatedResponse } from '@/types/api.types';
 
 const RESOURCE_ENDPOINTS = {
   RESOURCES: '/resources',
@@ -62,30 +62,31 @@ export class ResourceService {
   // ===== RECURSOS PRINCIPALES =====
   
   /**
-   * Obtener recursos con filtros - VERSIÓN CORREGIDA
+   * Obtener recursos con filtros - VERSIÓN CORREGIDA CON MAPEO CORRECTO
    */
-  static async getResources(filters: ResourceFilters = {}): Promise<ResourceListResponse> {
+  static async getResources(filters: ResourceFilters = {}): Promise<PaginatedResponse<Resource>> {
     try {
       const params = new URLSearchParams();
       
-      // Parámetros básicos
-      if (filters.page) params.append('page', filters.page.toString());
-      if (filters.limit) params.append('limit', filters.limit.toString());
-      if (filters.search) params.append('search', filters.search);
+      // Parámetros básicos con validación
+      if (filters.page && filters.page > 0) params.append('page', filters.page.toString());
+      if (filters.limit && filters.limit > 0) params.append('limit', Math.min(filters.limit, 100).toString());
+      if (filters.search?.trim()) params.append('search', filters.search.trim());
       if (filters.categoryId) params.append('categoryId', filters.categoryId);
       if (filters.typeId) params.append('typeId', filters.typeId);
       if (filters.locationId) params.append('locationId', filters.locationId);
-      
-      // IMPORTANTE: Mapear correctamente el filtro de disponibilidad
-      if (filters.available !== undefined) {
-        params.append('availability', filters.available ? 'available' : 'borrowed');
-      } else if (filters.availability) {
-        params.append('availability', filters.availability);
-      }
-      
       if (filters.authorId) params.append('authorId', filters.authorId);
       if (filters.sortBy) params.append('sortBy', filters.sortBy);
       if (filters.sortOrder) params.append('sortOrder', filters.sortOrder);
+      
+      // CORRECCIÓN CRÍTICA: Mapear correctamente el filtro de disponibilidad
+      if (filters.availability) {
+        params.append('availability', filters.availability);
+      }
+      // También manejar el caso donde venga 'available' como boolean (compatibilidad)
+      else if ('available' in filters && typeof (filters as any).available === 'boolean') {
+        params.append('availability', (filters as any).available ? 'available' : 'borrowed');
+      }
 
       const url = `${RESOURCE_ENDPOINTS.RESOURCES}?${params.toString()}`;
       
@@ -95,7 +96,7 @@ export class ResourceService {
         params: params.toString()
       });
 
-      const response = await axiosInstance.get<ResourceListResponse>(url);
+      const response = await axiosInstance.get<ApiResponse<PaginatedResponse<Resource>>>(url);
 
       console.log('✅ ResourceService: Respuesta recibida:', {
         success: response.data.success,
@@ -105,7 +106,7 @@ export class ResourceService {
       });
       
       if (response.data.success && response.data.data) {
-        return response.data;
+        return response.data.data;
       }
       
       throw new Error(response.data.message || 'Error al obtener recursos');
@@ -114,19 +115,20 @@ export class ResourceService {
         error: error.message,
         status: error.response?.status,
         statusText: error.response?.statusText,
-        data: error.response?.data
+        data: error.response?.data,
+        filters
       });
       
       // Si hay problema de conectividad
       if (!error.response) {
         console.error('🌐 ResourceService: Error de conectividad');
-        throw new Error('Error de conexión. Verifica que el backend esté funcionando.');
+        return this.createEmptyResourceResponse(filters);
       }
       
       // Si es error 500, intentar método de fallback
       if (error.response?.status === 500) {
         console.warn('🔄 ResourceService: Intentando método de fallback...');
-        return ResourceService.getResourcesWithFallback(filters);
+        return await this.getResourcesWithFallback(filters);
       }
       
       throw error;
@@ -136,48 +138,52 @@ export class ResourceService {
   /**
    * Método de fallback para cuando falla la búsqueda principal
    */
-  private static async getResourcesWithFallback(filters: ResourceFilters): Promise<ResourceListResponse> {
+  static async getResourcesWithFallback(filters: ResourceFilters): Promise<PaginatedResponse<Resource>> {
     try {
       // Intentar con parámetros más simples
       const params = new URLSearchParams();
       
-      if (filters.search) params.append('search', filters.search);
+      if (filters.search?.trim()) params.append('search', filters.search.trim());
       if (filters.limit) params.append('limit', (filters.limit || 10).toString());
+      if (filters.availability) params.append('availability', filters.availability);
       
       // Solo filtros básicos sin populate
       params.append('populate', 'false');
 
       console.log('🔄 ResourceService: Fallback con parámetros simples:', params.toString());
 
-      const response = await axiosInstance.get<ResourceListResponse>(
+      const response = await axiosInstance.get<ApiResponse<PaginatedResponse<Resource>>>(
         `${RESOURCE_ENDPOINTS.RESOURCES}?${params.toString()}`
       );
 
       if (response.data.success && response.data.data) {
         console.log('✅ ResourceService: Fallback exitoso');
-        return response.data;
+        return response.data.data;
       }
 
       throw new Error('Fallback falló');
     } catch (error) {
       console.error('❌ ResourceService: Fallback falló:', error);
-      
-      // Último recurso: estructura vacía válida
-      console.warn('🆘 ResourceService: Usando estructura vacía como último recurso');
-      return {
-        success: true,
-        message: 'Sin resultados disponibles',
-        data: {
-          data: [],
-          pagination: {
-            total: 0,
-            page: filters.page || 1,
-            limit: filters.limit || 10,
-            pages: 0
-          }
-        }
-      };
+      return this.createEmptyResourceResponse(filters);
     }
+  }
+
+  /**
+   * Crear respuesta vacía válida como último recurso
+   */
+  private static createEmptyResourceResponse(filters: ResourceFilters): PaginatedResponse<Resource> {
+    console.warn('🆘 ResourceService: Usando estructura vacía como último recurso');
+    return {
+      data: [],
+      pagination: {
+        total: 0,
+        page: filters.page || 1,
+        limit: filters.limit || 10,
+        totalPages: 0,
+        hasNextPage: false,
+        hasPrevPage: false
+      }
+    };
   }
   
   /**
@@ -198,15 +204,34 @@ export class ResourceService {
       
       throw new Error(response.data.message || 'Error al obtener recurso');
     } catch (error: any) {
-      console.error('❌ ResourceService: Error al obtener recurso por ID:', {
-        id,
-        error: error.message,
-        status: error.response?.status
-      });
+      console.error('❌ ResourceService: Error al buscar recurso por ID:', error);
       throw error;
     }
   }
   
+  /**
+   * Buscar recursos disponibles (optimizado para componentes de búsqueda)
+   */
+  static async searchAvailableResources(query: string, limit = 10): Promise<Resource[]> {
+    try {
+      console.log('🔍 ResourceService: Búsqueda de recursos disponibles:', { query, limit });
+
+      const response = await this.getResources({
+        search: query.trim(),
+        availability: 'available', // Solo recursos disponibles
+        limit: Math.min(limit, 20), // Límite razonable para autocomplete
+        page: 1
+      });
+
+      console.log(`✅ ResourceService: Búsqueda completada, ${response.data.length} resultados`);
+      return response.data;
+    } catch (error: any) {
+      console.error('❌ ResourceService: Error en búsqueda de recursos disponibles:', error);
+      // En caso de error, devolver array vacío para que el componente no falle
+      return [];
+    }
+  }
+
   /**
    * Obtener recurso por ISBN
    */
@@ -223,55 +248,47 @@ export class ResourceService {
         return response.data.data;
       }
       
-      throw new Error(response.data.message || 'Error al buscar recurso por ISBN');
+      throw new Error(response.data.message || 'Error al buscar por ISBN');
     } catch (error: any) {
-      console.error('❌ ResourceService: Error al buscar por ISBN:', {
-        isbn,
-        error: error.message,
-        status: error.response?.status
-      });
+      console.error('❌ ResourceService: Error al buscar por ISBN:', error);
       throw error;
     }
   }
-
+  
   /**
    * Crear nuevo recurso
    */
-  static async createResource(resourceData: CreateResourceRequest): Promise<Resource> {
+  static async createResource(data: CreateResourceRequest): Promise<Resource> {
     try {
-      console.log('➕ ResourceService: Creando nuevo recurso:', resourceData.title);
+      console.log('📝 ResourceService: Creando recurso:', data.title);
 
       const response = await axiosInstance.post<ResourceResponse>(
         RESOURCE_ENDPOINTS.RESOURCES,
-        resourceData
+        data
       );
       
       if (response.data.success && response.data.data) {
-        console.log('✅ ResourceService: Recurso creado exitosamente');
+        console.log('✅ ResourceService: Recurso creado exitosamente:', response.data.data._id);
         return response.data.data;
       }
       
       throw new Error(response.data.message || 'Error al crear recurso');
     } catch (error: any) {
-      console.error('❌ ResourceService: Error al crear recurso:', {
-        title: resourceData.title,
-        error: error.message,
-        status: error.response?.status
-      });
+      console.error('❌ ResourceService: Error al crear recurso:', error);
       throw error;
     }
   }
-
+  
   /**
    * Actualizar recurso
    */
-  static async updateResource(id: string, resourceData: UpdateResourceRequest): Promise<Resource> {
+  static async updateResource(id: string, data: UpdateResourceRequest): Promise<Resource> {
     try {
-      console.log('🔄 ResourceService: Actualizando recurso:', id);
+      console.log('📝 ResourceService: Actualizando recurso:', id);
 
       const response = await axiosInstance.put<ResourceResponse>(
         RESOURCE_ENDPOINTS.RESOURCE_BY_ID(id),
-        resourceData
+        data
       );
       
       if (response.data.success && response.data.data) {
@@ -281,19 +298,15 @@ export class ResourceService {
       
       throw new Error(response.data.message || 'Error al actualizar recurso');
     } catch (error: any) {
-      console.error('❌ ResourceService: Error al actualizar recurso:', {
-        id,
-        error: error.message,
-        status: error.response?.status
-      });
+      console.error('❌ ResourceService: Error al actualizar recurso:', error);
       throw error;
     }
   }
-
+  
   /**
    * Actualizar disponibilidad del recurso
    */
-  static async updateAvailability(id: string, available: boolean): Promise<Resource> {
+  static async updateResourceAvailability(id: string, available: boolean): Promise<Resource> {
     try {
       console.log('🔄 ResourceService: Actualizando disponibilidad:', { id, available });
 
@@ -303,22 +316,17 @@ export class ResourceService {
       );
       
       if (response.data.success && response.data.data) {
-        console.log('✅ ResourceService: Disponibilidad actualizada');
+        console.log('✅ ResourceService: Disponibilidad actualizada exitosamente');
         return response.data.data;
       }
       
       throw new Error(response.data.message || 'Error al actualizar disponibilidad');
     } catch (error: any) {
-      console.error('❌ ResourceService: Error al actualizar disponibilidad:', {
-        id,
-        available,
-        error: error.message,
-        status: error.response?.status
-      });
+      console.error('❌ ResourceService: Error al actualizar disponibilidad:', error);
       throw error;
     }
   }
-
+  
   /**
    * Eliminar recurso
    */
@@ -326,34 +334,23 @@ export class ResourceService {
     try {
       console.log('🗑️ ResourceService: Eliminando recurso:', id);
 
-      const response = await axiosInstance.delete<ApiResponse<null>>(
-        RESOURCE_ENDPOINTS.RESOURCE_BY_ID(id)
-      );
+      const response = await axiosInstance.delete(RESOURCE_ENDPOINTS.RESOURCE_BY_ID(id));
       
-      if (response.data.success) {
-        console.log('✅ ResourceService: Recurso eliminado exitosamente');
-        return;
+      if (!response.data.success) {
+        throw new Error(response.data.message || 'Error al eliminar recurso');
       }
-      
-      throw new Error(response.data.message || 'Error al eliminar recurso');
+
+      console.log('✅ ResourceService: Recurso eliminado exitosamente');
     } catch (error: any) {
-      console.error('❌ ResourceService: Error al eliminar recurso:', {
-        id,
-        error: error.message,
-        status: error.response?.status
-      });
+      console.error('❌ ResourceService: Error al eliminar recurso:', error);
       throw error;
     }
   }
-
-  // ===== CATEGORÍAS =====
   
-  /**
-   * Obtener todas las categorías
-   */
+  // ===== CATEGORÍAS =====
   static async getCategories(): Promise<Category[]> {
     try {
-      console.log('📂 ResourceService: Obteniendo categorías');
+      console.log('📁 ResourceService: Obteniendo categorías');
 
       const response = await axiosInstance.get<CategoryListResponse>(
         RESOURCE_ENDPOINTS.CATEGORIES
@@ -366,91 +363,33 @@ export class ResourceService {
       
       throw new Error(response.data.message || 'Error al obtener categorías');
     } catch (error: any) {
-      console.error('❌ ResourceService: Error al obtener categorías:', error.message);
+      console.error('❌ ResourceService: Error al obtener categorías:', error);
       throw error;
     }
   }
-
-  // ===== TIPOS DE RECURSOS =====
   
-  /**
-   * Obtener tipos de recursos
-   */
-  static async getResourceTypes(): Promise<ResourceType[]> {
+  static async createCategory(data: { name: string; description: string; color?: string }): Promise<Category> {
     try {
-      console.log('📋 ResourceService: Obteniendo tipos de recursos');
+      console.log('📝 ResourceService: Creando categoría:', data.name);
 
-      const response = await axiosInstance.get<ResourceTypeListResponse>(
-        RESOURCE_ENDPOINTS.RESOURCE_TYPES
+      const response = await axiosInstance.post<ApiResponse<Category>>(
+        RESOURCE_ENDPOINTS.CATEGORIES,
+        data
       );
       
       if (response.data.success && response.data.data) {
-        console.log('✅ ResourceService: Tipos de recursos obtenidos:', response.data.data.length);
+        console.log('✅ ResourceService: Categoría creada exitosamente');
         return response.data.data;
       }
       
-      throw new Error(response.data.message || 'Error al obtener tipos de recursos');
+      throw new Error(response.data.message || 'Error al crear categoría');
     } catch (error: any) {
-      console.error('❌ ResourceService: Error al obtener tipos de recursos:', error.message);
+      console.error('❌ ResourceService: Error al crear categoría:', error);
       throw error;
     }
   }
-
-  // ===== UBICACIONES =====
   
-  /**
-   * Obtener ubicaciones
-   */
-  static async getLocations(): Promise<Location[]> {
-    try {
-      console.log('📍 ResourceService: Obteniendo ubicaciones');
-
-      const response = await axiosInstance.get<LocationListResponse>(
-        RESOURCE_ENDPOINTS.LOCATIONS
-      );
-      
-      if (response.data.success && response.data.data) {
-        console.log('✅ ResourceService: Ubicaciones obtenidas:', response.data.data.length);
-        return response.data.data;
-      }
-      
-      throw new Error(response.data.message || 'Error al obtener ubicaciones');
-    } catch (error: any) {
-      console.error('❌ ResourceService: Error al obtener ubicaciones:', error.message);
-      throw error;
-    }
-  }
-
-  // ===== ESTADOS DE RECURSOS =====
-  
-  /**
-   * Obtener estados de recursos
-   */
-  static async getResourceStates(): Promise<ResourceState[]> {
-    try {
-      console.log('🏷️ ResourceService: Obteniendo estados de recursos');
-
-      const response = await axiosInstance.get<ResourceStateListResponse>(
-        RESOURCE_ENDPOINTS.RESOURCE_STATES
-      );
-      
-      if (response.data.success && response.data.data) {
-        console.log('✅ ResourceService: Estados de recursos obtenidos:', response.data.data.length);
-        return response.data.data;
-      }
-      
-      throw new Error(response.data.message || 'Error al obtener estados de recursos');
-    } catch (error: any) {
-      console.error('❌ ResourceService: Error al obtener estados de recursos:', error.message);
-      throw error;
-    }
-  }
-
   // ===== AUTORES =====
-  
-  /**
-   * Obtener autores
-   */
   static async getAuthors(): Promise<Author[]> {
     try {
       console.log('👨‍💼 ResourceService: Obteniendo autores');
@@ -466,16 +405,79 @@ export class ResourceService {
       
       throw new Error(response.data.message || 'Error al obtener autores');
     } catch (error: any) {
-      console.error('❌ ResourceService: Error al obtener autores:', error.message);
+      console.error('❌ ResourceService: Error al obtener autores:', error);
       throw error;
     }
   }
-
-  // ===== EDITORIALES =====
   
-  /**
-   * Obtener editoriales
-   */
+  static async searchAuthors(query: string, limit = 20): Promise<Author[]> {
+    try {
+      console.log('🔍 ResourceService: Buscando autores:', { query, limit });
+
+      const params = new URLSearchParams({
+        q: query.trim(),
+        limit: Math.min(limit, 50).toString(),
+      });
+      
+      const response = await axiosInstance.get<AuthorListResponse>(
+        `${RESOURCE_ENDPOINTS.AUTHOR_SEARCH}?${params.toString()}`
+      );
+      
+      if (response.data.success && response.data.data) {
+        console.log('✅ ResourceService: Autores encontrados:', response.data.data.length);
+        return response.data.data;
+      }
+      
+      throw new Error(response.data.message || 'Error al buscar autores');
+    } catch (error: any) {
+      console.error('❌ ResourceService: Error al buscar autores:', error);
+      return []; // Devolver array vacío en caso de error
+    }
+  }
+  
+  static async createAuthor(data: { name: string; biography?: string }): Promise<Author> {
+    try {
+      console.log('📝 ResourceService: Creando autor:', data.name);
+
+      const response = await axiosInstance.post<ApiResponse<Author>>(
+        RESOURCE_ENDPOINTS.AUTHORS,
+        data
+      );
+      
+      if (response.data.success && response.data.data) {
+        console.log('✅ ResourceService: Autor creado exitosamente');
+        return response.data.data;
+      }
+      
+      throw new Error(response.data.message || 'Error al crear autor');
+    } catch (error: any) {
+      console.error('❌ ResourceService: Error al crear autor:', error);
+      throw error;
+    }
+  }
+  
+  static async bulkCreateAuthors(names: string[]): Promise<Author[]> {
+    try {
+      console.log('📝 ResourceService: Creando autores en lote:', names.length);
+
+      const response = await axiosInstance.post<AuthorListResponse>(
+        RESOURCE_ENDPOINTS.AUTHOR_BULK_CREATE,
+        { names }
+      );
+      
+      if (response.data.success && response.data.data) {
+        console.log('✅ ResourceService: Autores creados exitosamente');
+        return response.data.data;
+      }
+      
+      throw new Error(response.data.message || 'Error al crear autores');
+    } catch (error: any) {
+      console.error('❌ ResourceService: Error al crear autores en lote:', error);
+      throw error;
+    }
+  }
+  
+  // ===== EDITORIALES =====
   static async getPublishers(): Promise<Publisher[]> {
     try {
       console.log('🏢 ResourceService: Obteniendo editoriales');
@@ -491,32 +493,162 @@ export class ResourceService {
       
       throw new Error(response.data.message || 'Error al obtener editoriales');
     } catch (error: any) {
-      console.error('❌ ResourceService: Error al obtener editoriales:', error.message);
+      console.error('❌ ResourceService: Error al obtener editoriales:', error);
       throw error;
     }
   }
-
-  static async checkGoogleBooksStatus(): Promise<ApiResponse<{ apiAvailable: boolean }>> {
+  
+  static async findOrCreatePublisher(name: string): Promise<Publisher> {
     try {
-      const response = await axiosInstance.get<ApiResponse<{ apiAvailable: boolean }>>(
-        RESOURCE_ENDPOINTS.GOOGLE_BOOKS_STATUS
+      console.log('🔍 ResourceService: Buscando o creando editorial:', name);
+
+      const response = await axiosInstance.post<ApiResponse<Publisher>>(
+        RESOURCE_ENDPOINTS.PUBLISHER_FIND_OR_CREATE,
+        { name: name.trim() }
       );
-      return response.data;
-    } catch (error) {
-      console.error('Error al verificar el estado de Google Books:', error);
+      
+      if (response.data.success && response.data.data) {
+        console.log('✅ ResourceService: Editorial procesada exitosamente');
+        return response.data.data;
+      }
+      
+      throw new Error(response.data.message || 'Error al crear editorial');
+    } catch (error: any) {
+      console.error('❌ ResourceService: Error al procesar editorial:', error);
       throw error;
     }
   }
-
-  static async searchGoogleBooks(query: string, maxResults: number): Promise<GoogleBooksSearchResponse> {
+  
+  // ===== UBICACIONES =====
+  static async getLocations(): Promise<Location[]> {
     try {
+      console.log('📍 ResourceService: Obteniendo ubicaciones');
+
+      const response = await axiosInstance.get<LocationListResponse>(
+        RESOURCE_ENDPOINTS.LOCATIONS
+      );
+      
+      if (response.data.success && response.data.data) {
+        console.log('✅ ResourceService: Ubicaciones obtenidas:', response.data.data.length);
+        return response.data.data;
+      }
+      
+      throw new Error(response.data.message || 'Error al obtener ubicaciones');
+    } catch (error: any) {
+      console.error('❌ ResourceService: Error al obtener ubicaciones:', error);
+      throw error;
+    }
+  }
+  
+  // ===== TIPOS Y ESTADOS =====
+  static async getResourceTypes(): Promise<ResourceType[]> {
+    try {
+      console.log('🏷️ ResourceService: Obteniendo tipos de recursos');
+
+      const response = await axiosInstance.get<ResourceTypeListResponse>(
+        RESOURCE_ENDPOINTS.RESOURCE_TYPES
+      );
+      
+      if (response.data.success && response.data.data) {
+        console.log('✅ ResourceService: Tipos de recursos obtenidos:', response.data.data.length);
+        return response.data.data;
+      }
+      
+      throw new Error(response.data.message || 'Error al obtener tipos de recursos');
+    } catch (error: any) {
+      console.error('❌ ResourceService: Error al obtener tipos de recursos:', error);
+      throw error;
+    }
+  }
+  
+  static async getResourceStates(): Promise<ResourceState[]> {
+    try {
+      console.log('🏷️ ResourceService: Obteniendo estados de recursos');
+
+      const response = await axiosInstance.get<ResourceStateListResponse>(
+        RESOURCE_ENDPOINTS.RESOURCE_STATES
+      );
+      
+      if (response.data.success && response.data.data) {
+        console.log('✅ ResourceService: Estados de recursos obtenidos:', response.data.data.length);
+        return response.data.data;
+      }
+      
+      throw new Error(response.data.message || 'Error al obtener estados de recursos');
+    } catch (error: any) {
+      console.error('❌ ResourceService: Error al obtener estados de recursos:', error);
+      throw error;
+    }
+  }
+  
+  // ===== GOOGLE BOOKS =====
+  static async searchGoogleBooks(query: string, maxResults = 10): Promise<GoogleBooksVolume[]> {
+    try {
+      console.log('📚 ResourceService: Buscando en Google Books:', { query, maxResults });
+
+      const params = new URLSearchParams({
+        q: query.trim(),
+        maxResults: Math.min(maxResults, 40).toString(),
+      });
+      
       const response = await axiosInstance.get<GoogleBooksSearchResponse>(
-        `${RESOURCE_ENDPOINTS.GOOGLE_BOOKS_SEARCH}?q=${encodeURIComponent(query)}&maxResults=${maxResults}`
+        `${RESOURCE_ENDPOINTS.GOOGLE_BOOKS_SEARCH}?${params.toString()}`
       );
-      return response.data;
-    } catch (error) {
-      console.error('Error al buscar en Google Books:', error);
+      
+      if (response.data.success && response.data.data) {
+        console.log('✅ ResourceService: Google Books resultados:', response.data.data.length);
+        return response.data.data;
+      }
+      
+      throw new Error(response.data.message || 'Error al buscar en Google Books');
+    } catch (error: any) {
+      console.error('❌ ResourceService: Error en Google Books:', error);
+      return []; // Devolver array vacío para que el componente no falle
+    }
+  }
+  
+  static async createResourceFromGoogleBooks(data: CreateResourceFromGoogleBooksRequest): Promise<Resource> {
+    try {
+      console.log('📝 ResourceService: Creando recurso desde Google Books:', data.googleBooksId);
+
+      const response = await axiosInstance.post<ResourceResponse>(
+        RESOURCE_ENDPOINTS.GOOGLE_BOOKS_CREATE,
+        data
+      );
+      
+      if (response.data.success && response.data.data) {
+        console.log('✅ ResourceService: Recurso creado desde Google Books exitosamente');
+        return response.data.data;
+      }
+      
+      throw new Error(response.data.message || 'Error al crear recurso desde Google Books');
+    } catch (error: any) {
+      console.error('❌ ResourceService: Error al crear desde Google Books:', error);
       throw error;
+    }
+  }
+  
+  static async checkGoogleBooksStatus(): Promise<{ apiAvailable: boolean; lastCheck: Date }> {
+    try {
+      console.log('🔍 ResourceService: Verificando estado de Google Books API');
+
+      const response = await axiosInstance.get(RESOURCE_ENDPOINTS.GOOGLE_BOOKS_STATUS);
+      
+      if (response.data.success && response.data.data) {
+        console.log('✅ ResourceService: Estado de Google Books obtenido');
+        return response.data.data;
+      }
+      
+      return { apiAvailable: false, lastCheck: new Date() };
+    } catch (error: any) {
+      console.error('❌ ResourceService: Error al verificar Google Books:', error);
+      return { apiAvailable: false, lastCheck: new Date() };
     }
   }
 }
+
+// Exportar clase con métodos estáticos
+// The export statement is removed as ResourceService is already exported above.
+
+// Exportar instancia única para compatibilidad con el código existente
+export const resourceService = ResourceService;
