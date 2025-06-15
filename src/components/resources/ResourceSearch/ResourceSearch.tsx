@@ -42,7 +42,7 @@ export function ResourceSearch({
   placeholder = "Buscar recurso (mínimo 2 caracteres)...",
   isDisabled = false,
   filterAvailable = false,
-  showOnlyAvailable = true, // Por defecto solo mostrar disponibles
+  showOnlyAvailable = true,
 }: ResourceSearchProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [results, setResults] = useState<Resource[]>([]);
@@ -55,6 +55,8 @@ export function ResourceSearch({
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  // 🔧 SOLUCIÓN: Agregar ref para controlar el timeout del blur
+  const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const bg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
@@ -69,6 +71,15 @@ export function ResourceSearch({
     }
   }, [selectedResource]);
 
+  // 🔧 SOLUCIÓN: Limpiar timeout al desmontar
+  useEffect(() => {
+    return () => {
+      if (blurTimeoutRef.current) {
+        clearTimeout(blurTimeoutRef.current);
+      }
+    };
+  }, []);
+
   // Búsqueda de recursos con manejo de errores mejorado
   useEffect(() => {
     if (debouncedSearchTerm.length >= 2) {
@@ -81,9 +92,8 @@ export function ResourceSearch({
         limit: 10,
       };
       
-      // CORRECCIÓN: Aplicar filtro de disponibilidad correctamente
       if (filterAvailable || showOnlyAvailable) {
-        filters.availability = 'available'; // Usar el parámetro correcto
+        filters.availability = 'available';
       }
 
       console.log('🔍 ResourceSearch: Iniciando búsqueda:', { 
@@ -91,7 +101,6 @@ export function ResourceSearch({
         filters 
       });
 
-      // CORRECCIÓN: Usar el método estático correctamente y manejar PaginatedResponse
       ResourceService.getResources(filters)
         .then((response) => {
           console.log('✅ ResourceSearch: Resultados obtenidos:', {
@@ -100,7 +109,6 @@ export function ResourceSearch({
             success: true
           });
           
-          // CORRECCIÓN: La respuesta es PaginatedResponse<Resource>, extraer data
           setResults(response.data || []);
           setIsOpen(true);
           setSelectedIndex(-1);
@@ -111,7 +119,6 @@ export function ResourceSearch({
           setResults([]);
           setIsOpen(false);
           
-          // Determinar tipo de error y mensaje apropiado
           let errorMessage = 'Error al buscar recursos.';
           
           if (!error.response) {
@@ -147,12 +154,20 @@ export function ResourceSearch({
       available: resource.available
     });
     
+    // 🔧 SOLUCIÓN: Cancelar timeout pendiente
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
+    
     onSelect(resource);
     setSearchTerm(resource.title);
     setIsOpen(false);
     setResults([]);
     setSelectedIndex(-1);
     setError(null);
+    // 🔧 NUEVO: Resetear hasSearched para evitar mensaje de error
+    setHasSearched(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -180,12 +195,27 @@ export function ResourceSearch({
     }
   };
 
+  // 🔧 SOLUCIÓN: Mejorar handleBlur con control de timeout
   const handleBlur = () => {
-    // Delay para permitir hacer click en los resultados
-    setTimeout(() => {
+    // Limpiar timeout anterior si existe
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+    }
+    
+    // Aumentar el delay y usar ref para poder cancelarlo
+    blurTimeoutRef.current = setTimeout(() => {
       setIsOpen(false);
       setSelectedIndex(-1);
-    }, 200);
+      blurTimeoutRef.current = null;
+    }, 150); // Reducido a 150ms para mejor UX
+  };
+
+  // 🔧 SOLUCIÓN: Agregar función para cancelar blur cuando se hace hover
+  const handleMouseEnterList = () => {
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
   };
 
   const handleClear = () => {
@@ -201,7 +231,6 @@ export function ResourceSearch({
   const handleRetry = () => {
     setError(null);
     if (debouncedSearchTerm.length >= 2) {
-      // Forzar nueva búsqueda
       const event = new Event('input', { bubbles: true });
       if (inputRef.current) {
         inputRef.current.dispatchEvent(event);
@@ -275,65 +304,40 @@ export function ResourceSearch({
           <AlertIcon />
           <VStack spacing={1} align="start" flex={1}>
             <Text fontSize="sm">{error}</Text>
-            {error.includes('conexión') || error.includes('servidor') ? (
+            {(error.includes('conexión') || error.includes('servidor')) && (
               <Button
                 size="xs"
+                variant="ghost"
                 leftIcon={<Icon as={FiRefreshCw} />}
                 onClick={handleRetry}
-                variant="outline"
                 colorScheme="red"
               >
                 Reintentar
               </Button>
-            ) : null}
+            )}
           </VStack>
         </Alert>
       )}
 
       {/* Mensaje cuando no hay resultados */}
-      {isOpen && !isLoading && results.length === 0 && !error && hasSearched && debouncedSearchTerm.length >= 2 && (
-        <Box
-          position="absolute"
-          top="100%"
-          left={0}
-          right={0}
-          zIndex={1000}
-          bg={bg}
-          border="1px solid"
-          borderColor={borderColor}
-          borderRadius="md"
-          p={4}
-          mt={1}
-          boxShadow="lg"
-        >
-          <VStack spacing={2}>
-            <Icon as={FiAlertCircle} color="gray.400" fontSize="lg" />
-            <Text fontSize="sm" color="gray.500" textAlign="center">
-              No se encontraron recursos con "{debouncedSearchTerm}"
-            </Text>
-            {(filterAvailable || showOnlyAvailable) && (
-              <Text fontSize="xs" color="gray.400" textAlign="center">
-                Búsqueda limitada a recursos disponibles
-              </Text>
-            )}
-          </VStack>
-        </Box>
+      {hasSearched && !isLoading && results.length === 0 && !error && debouncedSearchTerm.length >= 2 && !selectedResource && (
+        <Alert status="info" size="sm" mt={2} borderRadius="md">
+          <AlertIcon />
+          <Text fontSize="sm">
+            No se encontraron recursos que coincidan con "{debouncedSearchTerm}"
+          </Text>
+        </Alert>
       )}
 
-      {/* Información sobre recurso seleccionado */}
+      {/* Recurso seleccionado */}
       {selectedResource && !isOpen && (
         <Box
-          position="absolute"
-          top="100%"
-          left={0}
-          right={0}
-          zIndex={999}
+          mt={2}
+          p={2}
           bg="green.50"
           border="1px solid"
           borderColor="green.200"
           borderRadius="md"
-          p={2}
-          mt={1}
         >
           <HStack spacing={2}>
             <Box flexShrink={0}>
@@ -380,6 +384,8 @@ export function ResourceSearch({
           maxH="300px"
           overflowY="auto"
           mt={1}
+          // 🔧 SOLUCIÓN: Agregar onMouseEnter para cancelar blur
+          onMouseEnter={handleMouseEnterList}
         >
           <List ref={listRef}>
             {results.map((resource, index) => (
@@ -389,7 +395,11 @@ export function ResourceSearch({
                 cursor="pointer"
                 bg={index === selectedIndex ? selectedBg : 'transparent'}
                 _hover={{ bg: hoverBg }}
-                onClick={() => handleSelect(resource)}
+                // 🔧 SOLUCIÓN: Usar onMouseDown en lugar de onClick
+                onMouseDown={(e) => {
+                  e.preventDefault(); // Evitar que el input pierda foco
+                  handleSelect(resource);
+                }}
                 borderBottom={index < results.length - 1 ? '1px solid' : 'none'}
                 borderBottomColor={borderColor}
               >
@@ -402,81 +412,44 @@ export function ResourceSearch({
                         boxSize="40px"
                         objectFit="cover"
                         borderRadius="md"
-                        fallback={<Icon as={FiBook} fontSize="40px" color="gray.400" />}
                       />
                     ) : (
-                      <Icon as={FiBook} fontSize="40px" color="gray.400" />
+                      <Icon as={FiBook} fontSize="40px" color="blue.500" />
                     )}
                   </Box>
-                  
                   <VStack spacing={1} align="start" flex={1}>
                     <Text fontWeight="medium" fontSize="sm" noOfLines={2}>
                       {resource.title}
                     </Text>
-                    
-                    {/* Información de autores */}
                     {resource.authors && resource.authors.length > 0 && (
                       <Text fontSize="xs" color="gray.600" noOfLines={1}>
-                        por {resource.authors.map(author => author.name).join(', ')}
+                        {resource.authors.join(', ')}
                       </Text>
                     )}
-                    
-                    <HStack spacing={2} fontSize="xs" color="gray.500">
-                      {/* ISBN */}
-                      {resource.isbn && (
-                        <Text>ISBN: {resource.isbn}</Text>
-                      )}
-                      
-                      {/* Categoría */}
-                      {resource.category && (
-                        <>
-                          <Text>•</Text>
-                          <Text>{resource.category.name}</Text>
-                        </>
-                      )}
-                      
-                      {/* Tipo de recurso */}
-                      {resource.type && (
-                        <>
-                          <Text>•</Text>
-                          <Text>{resource.type.name}</Text>
-                        </>
+                    {resource.isbn && (
+                      <Text fontSize="xs" color="gray.500">
+                        ISBN: {resource.isbn}
+                      </Text>
+                    )}
+                    <HStack spacing={2}>
+                      <Badge 
+                        colorScheme={getAvailabilityBadgeColor(resource.available)} 
+                        size="sm"
+                        variant="subtle"
+                      >
+                        {resource.available ? 'Disponible' : 'No disponible'}
+                      </Badge>
+                      {resource.volumes && (
+                        <Badge colorScheme="blue" size="sm" variant="outline">
+                          Volúmenes: {resource.volumes}
+                        </Badge>
                       )}
                     </HStack>
-                  </VStack>
-                  
-                  <VStack spacing={1} align="end">
-                    <Badge 
-                      colorScheme={getAvailabilityBadgeColor(resource.available)}
-                      variant="subtle"
-                      fontSize="xs"
-                    >
-                      {resource.available ? 'Disponible' : 'No disponible'}
-                    </Badge>
-                    
-                    {/* Estado del recurso */}
-                    {resource.state && (
-                      <Badge 
-                        size="xs" 
-                        variant="outline"
-                        colorScheme="gray"
-                      >
-                        {resource.state.name}
-                      </Badge>
-                    )}
                   </VStack>
                 </HStack>
               </ListItem>
             ))}
           </List>
-          
-          {/* Footer con información adicional */}
-          <Box p={2} bg="gray.50" borderBottomRadius="md">
-            <Text fontSize="xs" color="gray.500" textAlign="center">
-              {results.length} resultado{results.length !== 1 ? 's' : ''} encontrado{results.length !== 1 ? 's' : ''}
-              {(filterAvailable || showOnlyAvailable) && ' (solo disponibles)'}
-            </Text>
-          </Box>
         </Box>
       )}
     </Box>

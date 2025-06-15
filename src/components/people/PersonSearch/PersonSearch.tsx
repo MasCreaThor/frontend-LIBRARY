@@ -24,7 +24,7 @@ import {
 import { useState, useEffect, useRef } from 'react';
 import { FiSearch, FiAlertCircle, FiRefreshCw } from 'react-icons/fi';
 import { Person, SearchFilters } from '@/types/api.types';
-import { PersonService } from '@/services/person.service'; // CORRECCIÓN: Importar la clase
+import { PersonService } from '@/services/person.service';
 import { useDebounce } from '@/hooks/useDebounce';
 
 interface PersonSearchProps {
@@ -53,6 +53,8 @@ export function PersonSearch({
   const debouncedSearchTerm = useDebounce(searchTerm, 300);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  // 🔧 SOLUCIÓN: Agregar ref para controlar el timeout del blur
+  const blurTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const bg = useColorModeValue('white', 'gray.800');
   const borderColor = useColorModeValue('gray.200', 'gray.600');
@@ -67,6 +69,15 @@ export function PersonSearch({
       setSearchTerm(fullName);
     }
   }, [selectedPerson]);
+
+  // 🔧 SOLUCIÓN: Limpiar timeout al desmontar
+  useEffect(() => {
+    return () => {
+      if (blurTimeoutRef.current) {
+        clearTimeout(blurTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Búsqueda de personas con manejo de errores mejorado
   useEffect(() => {
@@ -89,7 +100,6 @@ export function PersonSearch({
         filters 
       });
 
-      // CORRECCIÓN: Usar el método estático de la clase y manejar PaginatedResponse
       PersonService.getPeople(filters)
         .then((response) => {
           console.log('✅ PersonSearch: Resultados obtenidos:', {
@@ -97,7 +107,6 @@ export function PersonSearch({
             total: response.pagination?.total || 0
           });
           
-          // CORRECCIÓN: La respuesta es PaginatedResponse<Person>, extraer data
           setResults(response.data || []);
           setIsOpen(true);
           setSelectedIndex(-1);
@@ -108,7 +117,6 @@ export function PersonSearch({
           setResults([]);
           setIsOpen(false);
           
-          // Determinar tipo de error y mensaje apropiado
           let errorMessage = 'Error al buscar personas.';
           
           if (!error.response) {
@@ -143,6 +151,12 @@ export function PersonSearch({
       name: person.fullName || `${person.firstName} ${person.lastName}`
     });
     
+    // 🔧 SOLUCIÓN: Cancelar timeout pendiente
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
+    
     onPersonSelected(person);
     const fullName = person.fullName || `${person.firstName} ${person.lastName}`;
     setSearchTerm(fullName);
@@ -150,6 +164,8 @@ export function PersonSearch({
     setResults([]);
     setSelectedIndex(-1);
     setError(null);
+    // 🔧 NUEVO: Resetear hasSearched para evitar mensaje de error
+    setHasSearched(false);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -177,12 +193,27 @@ export function PersonSearch({
     }
   };
 
+  // 🔧 SOLUCIÓN: Mejorar handleBlur con control de timeout
   const handleBlur = () => {
-    // Delay para permitir hacer click en los resultados
-    setTimeout(() => {
+    // Limpiar timeout anterior si existe
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+    }
+    
+    // Aumentar el delay y usar ref para poder cancelarlo
+    blurTimeoutRef.current = setTimeout(() => {
       setIsOpen(false);
       setSelectedIndex(-1);
-    }, 200);
+      blurTimeoutRef.current = null;
+    }, 150); // Reducido a 150ms para mejor UX
+  };
+
+  // 🔧 SOLUCIÓN: Agregar función para cancelar blur cuando se hace hover
+  const handleMouseEnterList = () => {
+    if (blurTimeoutRef.current) {
+      clearTimeout(blurTimeoutRef.current);
+      blurTimeoutRef.current = null;
+    }
   };
 
   const handleClear = () => {
@@ -198,7 +229,6 @@ export function PersonSearch({
   const handleRetry = () => {
     setError(null);
     if (debouncedSearchTerm.length >= 2) {
-      // Forzar nueva búsqueda
       const event = new Event('input', { bubbles: true });
       if (inputRef.current) {
         inputRef.current.dispatchEvent(event);
@@ -268,68 +298,47 @@ export function PersonSearch({
           <AlertIcon />
           <VStack spacing={1} align="start" flex={1}>
             <Text fontSize="sm">{error}</Text>
-            {error.includes('conexión') || error.includes('servidor') ? (
+            {(error.includes('conexión') || error.includes('servidor')) && (
               <Button
                 size="xs"
+                variant="ghost"
                 leftIcon={<Icon as={FiRefreshCw} />}
                 onClick={handleRetry}
-                variant="outline"
                 colorScheme="red"
               >
                 Reintentar
               </Button>
-            ) : null}
+            )}
           </VStack>
         </Alert>
       )}
 
       {/* Mensaje cuando no hay resultados */}
-      {isOpen && !isLoading && results.length === 0 && !error && hasSearched && debouncedSearchTerm.length >= 2 && (
-        <Box
-          position="absolute"
-          top="100%"
-          left={0}
-          right={0}
-          zIndex={1000}
-          bg={bg}
-          border="1px solid"
-          borderColor={borderColor}
-          borderRadius="md"
-          p={4}
-          mt={1}
-          boxShadow="lg"
-        >
-          <VStack spacing={2}>
-            <Icon as={FiAlertCircle} color="gray.400" fontSize="lg" />
-            <Text fontSize="sm" color="gray.500" textAlign="center">
-              No se encontraron personas con "{debouncedSearchTerm}"
-            </Text>
-            {filterActive && (
-              <Text fontSize="xs" color="gray.400" textAlign="center">
-                Búsqueda limitada a personas activas
-              </Text>
-            )}
-          </VStack>
-        </Box>
+      {hasSearched && !isLoading && results.length === 0 && !error && debouncedSearchTerm.length >= 2 && !selectedPerson && (
+        <Alert status="info" size="sm" mt={2} borderRadius="md">
+          <AlertIcon />
+          <Text fontSize="sm">
+            No se encontraron personas que coincidan con "{debouncedSearchTerm}"
+          </Text>
+        </Alert>
       )}
 
-      {/* Información sobre persona seleccionada */}
+      {/* Persona seleccionada */}
       {selectedPerson && !isOpen && (
         <Box
-          position="absolute"
-          top="100%"
-          left={0}
-          right={0}
-          zIndex={999}
+          mt={2}
+          p={2}
           bg="green.50"
           border="1px solid"
           borderColor="green.200"
           borderRadius="md"
-          p={2}
-          mt={1}
         >
           <HStack spacing={2}>
-            <Avatar size="xs" name={selectedPerson.fullName || `${selectedPerson.firstName} ${selectedPerson.lastName}`} />
+            <Avatar 
+              size="xs" 
+              name={selectedPerson.fullName || `${selectedPerson.firstName} ${selectedPerson.lastName}`}
+              bg="green.500"
+            />
             <VStack spacing={0} align="start" flex={1}>
               <Text fontSize="sm" fontWeight="medium" color="green.700">
                 Persona seleccionada
@@ -361,6 +370,8 @@ export function PersonSearch({
           maxH="300px"
           overflowY="auto"
           mt={1}
+          // 🔧 SOLUCIÓN: Agregar onMouseEnter para cancelar blur
+          onMouseEnter={handleMouseEnterList}
         >
           <List ref={listRef}>
             {results.map((person, index) => (
@@ -370,7 +381,11 @@ export function PersonSearch({
                 cursor="pointer"
                 bg={index === selectedIndex ? selectedBg : 'transparent'}
                 _hover={{ bg: hoverBg }}
-                onClick={() => handleSelect(person)}
+                // 🔧 SOLUCIÓN: Usar onMouseDown en lugar de onClick
+                onMouseDown={(e) => {
+                  e.preventDefault(); // Evitar que el input pierda foco
+                  handleSelect(person);
+                }}
                 borderBottom={index < results.length - 1 ? '1px solid' : 'none'}
                 borderBottomColor={borderColor}
               >
@@ -406,21 +421,13 @@ export function PersonSearch({
                       size="sm"
                       variant="subtle"
                     >
-                      {person.active ? 'Activo' : 'Inactivo'}
+                      {person.active ? 'Activa' : 'Inactiva'}
                     </Badge>
                   </VStack>
                 </HStack>
               </ListItem>
             ))}
           </List>
-          
-          {/* Footer con información adicional */}
-          <Box p={2} bg="gray.50" borderBottomRadius="md">
-            <Text fontSize="xs" color="gray.500" textAlign="center">
-              {results.length} resultado{results.length !== 1 ? 's' : ''} encontrado{results.length !== 1 ? 's' : ''}
-              {filterActive && ' (solo activos)'}
-            </Text>
-          </Box>
         </Box>
       )}
     </Box>

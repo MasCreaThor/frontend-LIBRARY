@@ -35,11 +35,11 @@ const LOAN_ENDPOINTS = {
   RESOURCE_LOANS: (resourceId: string) => `/loans/resource/${resourceId}`,
   
   // Operaciones de préstamo
-  RETURN_LOAN: '/loans/return',
-  RENEW_LOAN: (id: string) => `/loans/${id}/renew`,
-  MARK_AS_LOST: (id: string) => `/loans/${id}/mark-lost`,
+  RETURN_LOAN: '/returns',
+  RENEW_LOAN: (id: string) => `/returns/${id}/renew`,
+  MARK_AS_LOST: (id: string) => `/returns/${id}/mark-lost`,
   
-  // CORRECCIÓN: Usar endpoints que SÍ existen en el backend
+  // CORRECCIÓN
   LOAN_STATISTICS: '/loans/statistics',      // ✅ Existe
   LOAN_SUMMARY: '/loans/summary',           // ✅ Existe
   OVERDUE_STATS: '/overdue/stats',          // ✅ Existe
@@ -47,6 +47,12 @@ const LOAN_ENDPOINTS = {
   RESOURCE_LOAN_STATS: (resourceId: string) => `/loans/resource/${resourceId}`,
   OVERDUE_LOANS: '/overdue',                // ✅ Existe
   LOANS_DUE_SOON: '/overdue/near-due',      // ✅ Existe
+
+   // 🔧 NUEVOS ENDPOINTS para devoluciones
+   RETURN_HISTORY: '/returns/history',                   // ✅ GET /api/returns/history
+   PENDING_RETURNS: '/returns/pending',                  // ✅ GET /api/returns/pending
+   RETURN_STATISTICS: (period: string) => `/returns/statistics/${period}`, // ✅ GET /api/returns/statistics/:period
+   BATCH_RETURNS: '/returns/batch', 
   
   // Operaciones masivas
   BULK_CREATE: '/loans/bulk-create',
@@ -314,10 +320,18 @@ export class LoanService {
   static async returnLoan(returnData: ReturnLoanRequest): Promise<ReturnLoanResponse> {
     try {
       console.log('📝 LoanService: Procesando devolución:', returnData);
-
+  
+      // 🔧 CORRECCIÓN: Usar la estructura correcta que espera el backend
+      const requestData = {
+        loanId: returnData.loanId,
+        returnDate: returnData.actualReturnDate,
+        resourceCondition: returnData.resourceCondition,
+        returnObservations: returnData.returnObservations
+      };
+  
       const response = await axiosInstance.post<ApiResponse<ReturnLoanResponse>>(
-        LOAN_ENDPOINTS.RETURN_LOAN,
-        returnData
+        LOAN_ENDPOINTS.RETURN_LOAN, // ← Ahora apunta a '/returns'
+        requestData
       );
       
       if (response.data.success && response.data.data) {
@@ -338,9 +352,9 @@ export class LoanService {
   static async renewLoan(id: string, renewData?: RenewLoanRequest): Promise<RenewLoanResponse> {
     try {
       console.log('🔄 LoanService: Renovando préstamo:', { id, renewData });
-
-      const response = await axiosInstance.post<ApiResponse<RenewLoanResponse>>(
-        LOAN_ENDPOINTS.RENEW_LOAN(id),
+  
+      const response = await axiosInstance.put<ApiResponse<RenewLoanResponse>>(
+        LOAN_ENDPOINTS.RENEW_LOAN(id), // ← Ahora apunta a '/returns/:id/renew'
         renewData || {}
       );
       
@@ -362,9 +376,9 @@ export class LoanService {
   static async markAsLost(id: string, observations: string): Promise<Loan> {
     try {
       console.log('⚠️ LoanService: Marcando préstamo como perdido:', { id, observations });
-
-      const response = await axiosInstance.post<ApiResponse<Loan>>(
-        LOAN_ENDPOINTS.MARK_AS_LOST(id),
+  
+      const response = await axiosInstance.put<ApiResponse<Loan>>(
+        LOAN_ENDPOINTS.MARK_AS_LOST(id), // ← Ahora apunta a '/returns/:id/mark-lost'
         { observations }
       );
       
