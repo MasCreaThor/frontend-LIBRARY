@@ -1,9 +1,5 @@
-// hooks/useLoan.ts
-// ================================================================
-// HOOKS PERSONALIZADOS PARA SISTEMA DE PRÉSTAMOS - CORREGIDO
-// ================================================================
-
-import { useState, useEffect, useCallback, useMemo } from 'react';
+// src/hooks/useLoans.ts
+import { useQuery, useMutation, useQueryClient, UseQueryOptions } from '@tanstack/react-query';
 import { LoanService } from '@/services/loan.service';
 import type {
   LoanWithDetails,
@@ -13,496 +9,405 @@ import type {
   MarkAsLostRequest,
   LoanSearchFilters,
   OverdueFilters,
-  CanBorrowResult,
-  ResourceAvailabilityResult,
-  LoanValidationResult,
-  ReturnLoanResponse,
   LoanStats,
   OverdueStats,
   StockStats,
-  UseLoanState,
-  UseLoansState,
-  UseReturnState,
-  UseOverdueState
+  PaginatedResponse
 } from '@/types/loan.types';
+import toast from 'react-hot-toast';
 
-// ===== WRAPPER PARA MÉTODOS DE LOANSERVICE =====
+// ===== QUERY KEYS =====
+export const LOAN_QUERY_KEYS = {
+  loans: ['loans'] as const,
+  loansList: (filters: LoanSearchFilters) => ['loans', 'list', filters] as const,
+  loan: (id: string) => ['loans', 'detail', id] as const,
+  personLoans: (personId: string, filters?: Partial<LoanSearchFilters>) => 
+    ['loans', 'person', personId, filters] as const,
+  resourceLoans: (resourceId: string, filters?: Partial<LoanSearchFilters>) => 
+    ['loans', 'resource', resourceId, filters] as const,
+  
+  // Préstamos vencidos
+  overdue: ['loans', 'overdue'] as const,
+  overdueList: (filters: OverdueFilters) => ['loans', 'overdue', 'list', filters] as const,
+  overdueStats: ['loans', 'overdue', 'stats'] as const,
+  
+  // Devoluciones
+  returns: ['returns'] as const,
+  returnHistory: (filters: Partial<LoanSearchFilters>) => ['returns', 'history', filters] as const,
+  pendingReturns: (filters: Partial<LoanSearchFilters>) => ['returns', 'pending', filters] as const,
+  
+  // Estadísticas
+  loanStats: ['loans', 'stats'] as const,
+  stockStats: ['loans', 'stats', 'stock'] as const,
+} as const;
 
-class LoanServiceWrapper {
-  // Wrapper para obtener préstamos con filtros
-  static async findAll(filters: LoanSearchFilters) {
-    try {
-      // Usar searchLoans si existe
-      if (typeof LoanService.searchLoans === 'function') {
-        return await LoanService.searchLoans(filters);
+// ===== HOOK PRINCIPAL PARA PRÉSTAMOS =====
+
+/**
+ * Hook para obtener lista de préstamos con filtros
+ */
+export function useLoans(
+  filters: LoanSearchFilters = {},
+  options?: Omit<UseQueryOptions<PaginatedResponse<LoanWithDetails>>, 'queryKey' | 'queryFn'>
+) {
+  const queryClient = useQueryClient();
+
+  const query = useQuery({
+    queryKey: LOAN_QUERY_KEYS.loansList(filters),
+    queryFn: () => LoanService.getLoans(filters),
+    staleTime: 2 * 60 * 1000, // 2 minutos
+    gcTime: 5 * 60 * 1000, // 5 minutos
+    retry: 2,
+    ...options,
+  });
+
+  // Mutación para crear préstamo
+  const createLoanMutation = useMutation({
+    mutationFn: (loanData: CreateLoanRequest) => LoanService.createLoan(loanData),
+    onSuccess: (newLoan) => {
+      // Invalidar queries relacionadas
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.loans });
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.loanStats });
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.stockStats });
+      
+      // Si el préstamo es para una persona específica, invalidar sus préstamos
+      if (newLoan.person?._id) {
+        queryClient.invalidateQueries({ 
+          queryKey: LOAN_QUERY_KEYS.personLoans(newLoan.person._id) 
+        });
       }
       
-      // Último fallback: crear respuesta mock
-      return {
-        data: [],
-        pagination: {
-          page: 1,
-          limit: 20,
-          total: 0,
-          totalPages: 0,
-          hasNext: false,
-          hasPrev: false
-        }
-      };
-    } catch (error) {
-      console.error('Error en LoanServiceWrapper.findAll:', error);
-      throw error;
-    }
-  }
-
-  // Wrapper para estadísticas de préstamos
-  static async getLoanStatistics(): Promise<LoanStats> {
-    try {
-      // Intentar método original
-      if (typeof LoanService.getLoanStatistics === 'function') {
-        return await LoanService.getLoanStatistics();
+      // Si el préstamo es para un recurso específico, invalidar sus préstamos
+      if (newLoan.resource?._id) {
+        queryClient.invalidateQueries({ 
+          queryKey: LOAN_QUERY_KEYS.resourceLoans(newLoan.resource._id) 
+        });
       }
-      
-      // Fallback: crear estadísticas mock
-      return {
-        totalLoans: 0,
-        activeLoans: 0,
-        returnedLoans: 0,
-        overdueLoans: 0,
-        lostLoans: 0,
-        averageLoanDuration: 0,
-        topBorrowedResources: [],
-        topBorrowers: []
-      };
-    } catch (error) {
-      console.error('Error en LoanServiceWrapper.getLoanStatistics:', error);
-      throw error;
-    }
-  }
 
-  // Wrapper para estadísticas de stock
-  static async getStockStatistics(): Promise<StockStats> {
-    try {
-      // Intentar método original
-      if (typeof LoanService.getStockStatistics === 'function') {
-        return await LoanService.getStockStatistics();
-      }
-      
-      // Fallback: crear estadísticas mock
-      return {
-        totalResources: 0,
-        resourcesWithStock: 0,
-        resourcesWithoutStock: 0,
-        totalUnits: 0,
-        loanedUnits: 0,
-        availableUnits: 0,
-        topLoanedResources: [],
-        lowStockResources: []
-      };
-    } catch (error) {
-      console.error('Error en LoanServiceWrapper.getStockStatistics:', error);
-      throw error;
-    }
-  }
+      console.log('✅ useLoans: Préstamo creado y cache actualizado');
+    },
+    onError: (error: any) => {
+      console.error('❌ useLoans: Error al crear préstamo:', error);
+    },
+  });
 
-  // Wrapper para estadísticas de vencidos
-  static async getOverdueStats(): Promise<OverdueStats> {
-    try {
-      // Intentar método original
-      if (typeof LoanService.getOverdueStats === 'function') {
-        return await LoanService.getOverdueStats();
-      }
+  // Mutación para actualizar préstamo
+  const updateLoanMutation = useMutation({
+    mutationFn: ({ id, data }: { id: string; data: UpdateLoanRequest }) => 
+      LoanService.updateLoan(id, data),
+    onSuccess: (updatedLoan) => {
+      // Actualizar caché específico del préstamo
+      queryClient.setQueryData(
+        LOAN_QUERY_KEYS.loan(updatedLoan._id),
+        updatedLoan
+      );
       
-      // Fallback: crear estadísticas mock
-      return {
-        totalOverdue: 0,
-        averageDaysOverdue: 0,
-        byPersonType: { students: 0, teachers: 0 },
-        byDaysOverdue: { '1-7': 0, '8-14': 0, '15-30': 0, '30+': 0 },
-        mostOverdueResources: []
-      };
-    } catch (error) {
-      console.error('Error en LoanServiceWrapper.getOverdueStats:', error);
-      throw error;
-    }
-  }
+      // Invalidar listas
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.loans });
+      
+      console.log('✅ useLoans: Préstamo actualizado y cache actualizado');
+    },
+    onError: (error: any) => {
+      console.error('❌ useLoans: Error al actualizar préstamo:', error);
+    },
+  });
+
+  return {
+    // Query data
+    loans: query.data?.data || [],
+    pagination: query.data?.pagination || null,
+    loading: query.isLoading,
+    error: query.error,
+    refetch: query.refetch,
+    
+    // Mutations
+    createLoan: createLoanMutation.mutateAsync,
+    updateLoan: updateLoanMutation.mutateAsync,
+    isCreating: createLoanMutation.isPending,
+    isUpdating: updateLoanMutation.isPending,
+  };
 }
 
-// ===== HOOK PARA PRÉSTAMO INDIVIDUAL =====
-
-export const useLoan = (loanId?: string) => {
-  const [state, setState] = useState<UseLoanState>({
-    loan: null,
-    loading: false,
-    error: null
+/**
+ * Hook para obtener un préstamo específico por ID
+ */
+export function useLoan(
+  id: string,
+  options?: Omit<UseQueryOptions<LoanWithDetails>, 'queryKey' | 'queryFn'>
+) {
+  return useQuery({
+    queryKey: LOAN_QUERY_KEYS.loan(id),
+    queryFn: () => LoanService.getLoanById(id),
+    enabled: !!id,
+    staleTime: 5 * 60 * 1000, // 5 minutos
+    gcTime: 10 * 60 * 1000, // 10 minutos
+    retry: 2,
+    ...options,
   });
+}
 
-  const fetchLoan = useCallback(async (id: string) => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
-    
-    try {
-      const loan = await LoanService.getLoanById(id);
-      setState(prev => ({ ...prev, loan, loading: false }));
-    } catch (error: any) {
-      setState(prev => ({ 
-        ...prev, 
-        loading: false, 
-        error: error.message || 'Error al cargar el préstamo' 
-      }));
-    }
-  }, []);
-
-  const updateLoan = useCallback(async (id: string, data: UpdateLoanRequest) => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
-    
-    try {
-      const loan = await LoanService.updateLoan(id, data);
-      setState(prev => ({ ...prev, loan, loading: false }));
-      return loan;
-    } catch (error: any) {
-      setState(prev => ({ 
-        ...prev, 
-        loading: false, 
-        error: error.message || 'Error al actualizar el préstamo' 
-      }));
-      throw error;
-    }
-  }, []);
-
-  const renewLoan = useCallback(async (id: string, newDueDate?: string) => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
-    
-    try {
-      const result = await LoanService.renewLoan(id, newDueDate);
-      setState(prev => ({ ...prev, loan: result.loan, loading: false }));
-      return result;
-    } catch (error: any) {
-      setState(prev => ({ 
-        ...prev, 
-        loading: false, 
-        error: error.message || 'Error al renovar el préstamo' 
-      }));
-      throw error;
-    }
-  }, []);
-
-  useEffect(() => {
-    if (loanId) {
-      fetchLoan(loanId);
-    }
-  }, [loanId, fetchLoan]);
-
-  return {
-    ...state,
-    refetch: () => loanId && fetchLoan(loanId),
-    updateLoan,
-    renewLoan
-  };
-};
-
-// ===== HOOK PARA LISTA DE PRÉSTAMOS =====
-
-export const useLoans = (initialFilters: LoanSearchFilters = {}) => {
-  const [state, setState] = useState<UseLoansState>({
-    loans: [],
-    loading: false,
-    error: null,
-    pagination: null
+/**
+ * Hook para obtener préstamos de una persona específica
+ */
+export function usePersonLoans(
+  personId: string,
+  filters: Partial<LoanSearchFilters> = {},
+  options?: Omit<UseQueryOptions<PaginatedResponse<LoanWithDetails>>, 'queryKey' | 'queryFn'>
+) {
+  return useQuery({
+    queryKey: LOAN_QUERY_KEYS.personLoans(personId, filters),
+    queryFn: () => LoanService.getPersonLoans(personId, filters),
+    enabled: !!personId,
+    staleTime: 2 * 60 * 1000, // 2 minutos
+    gcTime: 5 * 60 * 1000, // 5 minutos
+    retry: 2,
+    ...options,
   });
+}
 
-  const [filters, setFilters] = useState<LoanSearchFilters>(initialFilters);
+/**
+ * Hook para obtener préstamos de un recurso específico
+ */
+export function useResourceLoans(
+  resourceId: string,
+  filters: Partial<LoanSearchFilters> = {},
+  options?: Omit<UseQueryOptions<PaginatedResponse<LoanWithDetails>>, 'queryKey' | 'queryFn'>
+) {
+  return useQuery({
+    queryKey: LOAN_QUERY_KEYS.resourceLoans(resourceId, filters),
+    queryFn: () => LoanService.getResourceLoans(resourceId, filters),
+    enabled: !!resourceId,
+    staleTime: 2 * 60 * 1000, // 2 minutos
+    gcTime: 5 * 60 * 1000, // 5 minutos
+    retry: 2,
+    ...options,
+  });
+}
 
-  const fetchLoans = useCallback(async (searchFilters?: LoanSearchFilters) => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
-    
-    try {
-      const finalFilters = searchFilters || filters;
-      // FIX: Usar el wrapper que maneja diferentes implementaciones
-      const response = await LoanServiceWrapper.findAll(finalFilters);
-      setState(prev => ({ 
-        ...prev, 
-        loans: response.data, 
-        pagination: response.pagination,
-        loading: false 
-      }));
-    } catch (error: any) {
-      setState(prev => ({ 
-        ...prev, 
-        loading: false, 
-        error: error.message || 'Error al cargar préstamos' 
-      }));
-    }
-  }, [filters]);
+// ===== HOOKS PARA DEVOLUCIONES =====
 
-  const createLoan = useCallback(async (data: CreateLoanRequest) => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
-    
-    try {
-      const loan = await LoanService.createLoan(data);
-      setState(prev => ({ 
-        ...prev, 
-        loans: [loan, ...prev.loans],
-        loading: false 
-      }));
-      return loan;
-    } catch (error: any) {
-      setState(prev => ({ 
-        ...prev, 
-        loading: false, 
-        error: error.message || 'Error al crear el préstamo' 
-      }));
-      throw error;
-    }
-  }, []);
+/**
+ * Hook para gestión de devoluciones
+ */
+export function useReturn() {
+  const queryClient = useQueryClient();
 
-  const updateFilters = useCallback((newFilters: LoanSearchFilters) => {
-    setFilters(prev => ({ ...prev, ...newFilters }));
-  }, []);
-
-  const changePage = useCallback((page: number) => {
-    updateFilters({ page });
-  }, [updateFilters]);
-
-  const changeLimit = useCallback((limit: number) => {
-    updateFilters({ limit, page: 1 });
-  }, [updateFilters]);
-
-  const refetch = useCallback(() => {
-    fetchLoans();
-  }, [fetchLoans]);
-
-  useEffect(() => {
-    fetchLoans();
-  }, [fetchLoans]);
-
-  return {
-    ...state,
-    filters,
-    updateFilters,
-    changePage,
-    changeLimit,
-    refetch,
-    createLoan
-  };
-};
-
-// ===== HOOK PARA VALIDACIÓN DE PRÉSTAMOS =====
-
-export const useLoanValidation = () => {
-  const [isValid, setIsValid] = useState<boolean>(false); // FIX: Tipo explícito boolean
-  const [validationErrors, setValidationErrors] = useState<string[]>([]);
-  const [loading, setLoading] = useState(false);
-
-  const validateLoan = useCallback(async (data: CreateLoanRequest) => {
-    setLoading(true);
-    setValidationErrors([]);
-    
-    try {
-      const result = await LoanService.validateLoan(data);
+  // Mutación para devolver préstamo
+  const returnLoanMutation = useMutation({
+    mutationFn: ({ loanId, returnData }: { loanId: string; returnData: ReturnLoanRequest }) =>
+      LoanService.returnLoan(loanId, returnData),
+    onSuccess: (returnResponse) => {
+      // Invalidar todas las queries relacionadas con préstamos
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.loans });
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.returns });
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.loanStats });
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.stockStats });
       
-      // FIX: Asegurar que isFormValid sea boolean
-      const isFormValid = Boolean(result.isValid); // Conversión explícita a boolean
-      setIsValid(isFormValid);
-      
-      if (!result.isValid) {
-        setValidationErrors(result.errors || []);
+      // Actualizar el préstamo específico en el cache
+      if (returnResponse.loan) {
+        queryClient.setQueryData(
+          LOAN_QUERY_KEYS.loan(returnResponse.loan._id),
+          returnResponse.loan
+        );
       }
-      
-      return result;
-    } catch (error: any) {
-      setIsValid(false);
-      setValidationErrors([error.message || 'Error de validación']);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
-  const canPersonBorrow = useCallback(async (personId: string): Promise<CanBorrowResult> => {
-    try {
-      return await LoanService.canPersonBorrow(personId);
-    } catch (error: any) {
-      throw error;
-    }
-  }, []);
-
-  const checkResourceAvailability = useCallback(async (resourceId: string): Promise<ResourceAvailabilityResult> => {
-    try {
-      return await LoanService.checkResourceAvailability(resourceId);
-    } catch (error: any) {
-      throw error;
-    }
-  }, []);
-
-  return {
-    isValid,
-    validationErrors,
-    loading,
-    validateLoan,
-    canPersonBorrow,
-    checkResourceAvailability
-  };
-};
-
-// ===== HOOK PARA DEVOLUCIONES =====
-
-export const useReturn = () => {
-  const [state, setState] = useState<UseReturnState>({
-    processing: false,
-    error: null,
-    lastReturn: null
+      console.log('✅ useReturn: Préstamo devuelto y cache actualizado');
+    },
+    onError: (error: any) => {
+      console.error('❌ useReturn: Error al devolver préstamo:', error);
+    },
   });
 
-  const returnLoan = useCallback(async (data: ReturnLoanRequest) => {
-    setState(prev => ({ ...prev, processing: true, error: null }));
-    
-    try {
-      const result = await LoanService.returnLoan(data);
-      setState(prev => ({ 
-        ...prev, 
-        processing: false, 
-        lastReturn: result 
-      }));
-      return result;
-    } catch (error: any) {
-      setState(prev => ({ 
-        ...prev, 
-        processing: false, 
-        error: error.message || 'Error al devolver el préstamo' 
-      }));
-      throw error;
-    }
-  }, []);
+  // Mutación para marcar como perdido
+  const markAsLostMutation = useMutation({
+    mutationFn: ({ loanId, lostData }: { loanId: string; lostData: MarkAsLostRequest }) =>
+      LoanService.markAsLost(loanId, lostData),
+    onSuccess: (updatedLoan) => {
+      // Invalidar queries
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.loans });
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.loanStats });
+      
+      // Actualizar el préstamo específico
+      queryClient.setQueryData(
+        LOAN_QUERY_KEYS.loan(updatedLoan._id),
+        updatedLoan
+      );
 
-  const markAsLost = useCallback(async (loanId: string, data: MarkAsLostRequest) => {
-    setState(prev => ({ ...prev, processing: true, error: null }));
-    
-    try {
-      const result = await LoanService.markAsLost(loanId, data);
-      setState(prev => ({ ...prev, processing: false }));
-      return result;
-    } catch (error: any) {
-      setState(prev => ({ 
-        ...prev, 
-        processing: false, 
-        error: error.message || 'Error al marcar como perdido' 
-      }));
-      throw error;
-    }
-  }, []);
-
-  return {
-    ...state,
-    returnLoan,
-    markAsLost
-  };
-};
-
-// ===== HOOK PARA PRÉSTAMOS VENCIDOS =====
-
-export const useOverdue = (initialFilters: OverdueFilters = {}) => {
-  const [state, setState] = useState<UseOverdueState>({
-    overdueLoans: [],
-    stats: null,
-    loading: false,
-    error: null,
-    pagination: null
+      console.log('✅ useReturn: Préstamo marcado como perdido y cache actualizado');
+    },
+    onError: (error: any) => {
+      console.error('❌ useReturn: Error al marcar como perdido:', error);
+    },
   });
 
-  const [filters, setFilters] = useState<OverdueFilters>(initialFilters);
-
-  const fetchOverdueLoans = useCallback(async () => {
-    setState(prev => ({ ...prev, loading: true, error: null }));
-    
-    try {
-      const response = await LoanService.getOverdueLoans(filters);
-      setState(prev => ({ 
-        ...prev, 
-        overdueLoans: response.data,
-        pagination: response.pagination,
-        loading: false 
-      }));
-    } catch (error: any) {
-      setState(prev => ({ 
-        ...prev, 
-        loading: false, 
-        error: error.message || 'Error al cargar préstamos vencidos' 
-      }));
-    }
-  }, [filters]);
-
-  const fetchOverdueStats = useCallback(async () => {
-    try {
-      const stats = await LoanServiceWrapper.getOverdueStats();
-      setState(prev => ({ ...prev, stats }));
-    } catch (error: any) {
-      console.error('Error loading overdue stats:', error);
-    }
-  }, []);
-
-  const updateFilters = useCallback((newFilters: OverdueFilters) => {
-    setFilters(prev => ({ ...prev, ...newFilters }));
-  }, []);
-
-  const refetch = useCallback(() => {
-    fetchOverdueLoans();
-    fetchOverdueStats();
-  }, [fetchOverdueLoans, fetchOverdueStats]);
-
-  useEffect(() => {
-    fetchOverdueLoans();
-    fetchOverdueStats();
-  }, [fetchOverdueLoans, fetchOverdueStats]);
-
-  return {
-    ...state,
-    filters,
-    updateFilters,
-    refetch
-  };
-};
-
-// ===== HOOK PARA ESTADÍSTICAS =====
-
-export const useLoanStats = () => {
-  const [stats, setStats] = useState<LoanStats | null>(null);
-  const [overdueStats, setOverdueStats] = useState<OverdueStats | null>(null);
-  const [stockStats, setStockStats] = useState<StockStats | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const fetchStats = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    
-    try {
-      // FIX: Usar los wrappers que manejan diferentes implementaciones
-      const [loanStats, overdueStatsData, stockStatsData] = await Promise.all([
-        LoanServiceWrapper.getLoanStatistics(),
-        LoanServiceWrapper.getOverdueStats(),
-        LoanServiceWrapper.getStockStatistics()
-      ]);
+  // Mutación para renovar préstamo
+  const renewLoanMutation = useMutation({
+    mutationFn: (loanId: string) => LoanService.renewLoan(loanId),
+    onSuccess: (renewResponse) => {
+      // Invalidar queries
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.loans });
       
-      setStats(loanStats);
-      setOverdueStats(overdueStatsData);
-      setStockStats(stockStatsData);
-    } catch (error: any) {
-      setError(error.message || 'Error al cargar estadísticas');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      // Actualizar el préstamo específico
+      if (renewResponse.loan) {
+        queryClient.setQueryData(
+          LOAN_QUERY_KEYS.loan(renewResponse.loan._id),
+          renewResponse.loan
+        );
+      }
 
-  useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
+      console.log('✅ useReturn: Préstamo renovado y cache actualizado');
+    },
+    onError: (error: any) => {
+      console.error('❌ useReturn: Error al renovar préstamo:', error);
+    },
+  });
 
   return {
-    stats,
-    overdueStats,
-    stockStats,
-    loading,
-    error,
-    refetch: fetchStats
+    returnLoan: returnLoanMutation.mutateAsync,
+    markAsLost: markAsLostMutation.mutateAsync,
+    renewLoan: renewLoanMutation.mutateAsync,
+    
+    isReturning: returnLoanMutation.isPending,
+    isMarkingAsLost: markAsLostMutation.isPending,
+    isRenewing: renewLoanMutation.isPending,
+    
+    returnError: returnLoanMutation.error,
+    markAsLostError: markAsLostMutation.error,
+    renewError: renewLoanMutation.error,
   };
-};
+}
+
+/**
+ * Hook para obtener historial de devoluciones
+ */
+export function useReturnHistory(
+  filters: Partial<LoanSearchFilters> = {},
+  options?: Omit<UseQueryOptions<PaginatedResponse<LoanWithDetails>>, 'queryKey' | 'queryFn'>
+) {
+  return useQuery({
+    queryKey: LOAN_QUERY_KEYS.returnHistory(filters),
+    queryFn: () => LoanService.getReturnHistory(filters),
+    staleTime: 5 * 60 * 1000, // 5 minutos
+    gcTime: 10 * 60 * 1000, // 10 minutos
+    retry: 2,
+    ...options,
+  });
+}
+
+/**
+ * Hook para obtener préstamos pendientes de devolución
+ */
+export function usePendingReturns(
+  filters: Partial<LoanSearchFilters> = {},
+  options?: Omit<UseQueryOptions<PaginatedResponse<LoanWithDetails>>, 'queryKey' | 'queryFn'>
+) {
+  return useQuery({
+    queryKey: LOAN_QUERY_KEYS.pendingReturns(filters),
+    queryFn: () => LoanService.getPendingReturns(filters),
+    staleTime: 2 * 60 * 1000, // 2 minutos
+    gcTime: 5 * 60 * 1000, // 5 minutos
+    retry: 2,
+    ...options,
+  });
+}
+
+// ===== HOOKS PARA PRÉSTAMOS VENCIDOS =====
+
+/**
+ * Hook para obtener préstamos vencidos
+ */
+export function useOverdueLoans(
+  filters: OverdueFilters = {},
+  options?: Omit<UseQueryOptions<PaginatedResponse<LoanWithDetails>>, 'queryKey' | 'queryFn'>
+) {
+  return useQuery({
+    queryKey: LOAN_QUERY_KEYS.overdueList(filters),
+    queryFn: () => LoanService.getOverdueLoans(filters),
+    staleTime: 1 * 60 * 1000, // 1 minuto (datos más críticos)
+    gcTime: 3 * 60 * 1000, // 3 minutos
+    retry: 2,
+    ...options,
+  });
+}
+
+/**
+ * Hook para obtener estadísticas de préstamos vencidos
+ */
+export function useOverdueStats(
+  options?: Omit<UseQueryOptions<OverdueStats>, 'queryKey' | 'queryFn'>
+) {
+  return useQuery({
+    queryKey: LOAN_QUERY_KEYS.overdueStats,
+    queryFn: () => LoanService.getOverdueStats(),
+    staleTime: 5 * 60 * 1000, // 5 minutos
+    gcTime: 10 * 60 * 1000, // 10 minutos
+    retry: 2,
+    ...options,
+  });
+}
+
+// ===== HOOKS PARA ESTADÍSTICAS =====
+
+/**
+ * Hook para obtener estadísticas generales de préstamos
+ */
+export function useLoanStats(
+  options?: Omit<UseQueryOptions<LoanStats>, 'queryKey' | 'queryFn'>
+) {
+  return useQuery({
+    queryKey: LOAN_QUERY_KEYS.loanStats,
+    queryFn: () => LoanService.getLoanStats(),
+    staleTime: 5 * 60 * 1000, // 5 minutos
+    gcTime: 15 * 60 * 1000, // 15 minutos
+    retry: 2,
+    ...options,
+  });
+}
+
+/**
+ * Hook para obtener estadísticas de stock
+ */
+export function useStockStats(
+  options?: Omit<UseQueryOptions<StockStats>, 'queryKey' | 'queryFn'>
+) {
+  return useQuery({
+    queryKey: LOAN_QUERY_KEYS.stockStats,
+    queryFn: () => LoanService.getStockStats(),
+    staleTime: 3 * 60 * 1000, // 3 minutos
+    gcTime: 10 * 60 * 1000, // 10 minutos
+    retry: 2,
+    ...options,
+  });
+}
+
+// ===== HOOKS DE UTILIDAD =====
+
+/**
+ * Hook para invalidar todas las queries relacionadas con préstamos
+ */
+export function useInvalidateLoans() {
+  const queryClient = useQueryClient();
+
+  return {
+    invalidateAll: () => {
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.loans });
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.returns });
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.overdue });
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.loanStats });
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.stockStats });
+      console.log('🔄 useInvalidateLoans: Todas las queries de préstamos invalidadas');
+    },
+    
+    invalidateLoans: () => {
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.loans });
+      console.log('🔄 useInvalidateLoans: Queries de préstamos invalidadas');
+    },
+    
+    invalidateStats: () => {
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.loanStats });
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.stockStats });
+      queryClient.invalidateQueries({ queryKey: LOAN_QUERY_KEYS.overdueStats });
+      console.log('🔄 useInvalidateLoans: Queries de estadísticas invalidadas');
+    },
+  };
+}

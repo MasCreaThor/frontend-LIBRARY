@@ -1,7 +1,5 @@
 // src/components/loans/CreateLoanModal.tsx
-// ================================================================
-// MODAL PARA CREAR NUEVOS PRÉSTAMOS - CORREGIDO
-// ================================================================
+'use client';
 
 import React, { useState, useEffect } from 'react';
 import {
@@ -16,9 +14,8 @@ import {
   FormControl,
   FormLabel,
   FormErrorMessage,
-  Input,
+  FormHelperText,
   Textarea,
-  Select,
   NumberInput,
   NumberInputField,
   NumberInputStepper,
@@ -30,13 +27,19 @@ import {
   Text,
   Alert,
   AlertIcon,
-  Spinner,
-  Badge,
+  AlertTitle,
+  AlertDescription,
   Divider,
-  useToast
+  Badge,
+  Spinner,
+  useToast,
+  useColorModeValue,
+  Collapse,
+  List,
+  ListItem,
+  ListIcon,
 } from '@chakra-ui/react';
 
-// FIX: Usar react-icons en lugar de lucide-react
 import { 
   FiSave, 
   FiRefreshCw, 
@@ -45,15 +48,21 @@ import {
   FiCalendar,
   FiAlertTriangle,
   FiCheckCircle,
-  FiFileText
+  FiInfo,
+  FiX
 } from 'react-icons/fi';
 
-import { useForm } from 'react-hook-form';
+import { useForm, Controller } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import { format, addDays } from 'date-fns';
 
-// Importar hooks y tipos
-import { useLoans, useLoanValidation } from '@/hooks/useLoans';
+// Importar componentes y hooks
+import PersonSearchInput from '@/components/shared/PersonSearchInput/PersonSearchInput';
+import ResourceSearchInput from '@/components/shared/ResourceSearchInput/ResourceSearchInput';
+import { useLoans } from '@/hooks/useLoans';
+import { useLoanValidation, useRealtimeLoanValidation } from '@/hooks/useLoanValidation';
+import type { Person, Resource } from '@/types/api.types';
 import type { CreateLoanRequest, LoanWithDetails } from '@/types/loan.types';
 
 // ===== ESQUEMA DE VALIDACIÓN =====
@@ -61,8 +70,12 @@ import type { CreateLoanRequest, LoanWithDetails } from '@/types/loan.types';
 const createLoanSchema = z.object({
   personId: z.string().min(1, 'Debe seleccionar una persona'),
   resourceId: z.string().min(1, 'Debe seleccionar un recurso'),
-  quantity: z.number().min(1, 'La cantidad debe ser mayor a 0').max(50, 'Cantidad máxima: 50'),
-  observations: z.string().optional()
+  quantity: z.number()
+    .min(1, 'La cantidad debe ser mayor a 0')
+    .max(50, 'Cantidad máxima: 50'),
+  observations: z.string()
+    .max(500, 'Las observaciones no deben exceder 500 caracteres')
+    .optional()
 });
 
 type CreateLoanFormData = z.infer<typeof createLoanSchema>;
@@ -75,56 +88,39 @@ interface CreateLoanModalProps {
   onSuccess?: (loan: LoanWithDetails) => void;
 }
 
-interface Person {
-  _id: string;
-  firstName: string;
-  lastName: string;
-  fullName: string;
-  documentNumber?: string;
-  personType?: {
-    name: string;
-  };
-}
-
-interface Resource {
-  _id: string;
-  title: string;
-  author?: string;
-  isbn?: string;
-  totalQuantity: number;
-  availableQuantity: number;
-}
-
 // ===== COMPONENTE PRINCIPAL =====
 
-export const CreateLoanModal: React.FC<CreateLoanModalProps> = ({
+const CreateLoanModal: React.FC<CreateLoanModalProps> = ({
   isOpen,
   onClose,
   onSuccess
 }) => {
   const toast = useToast();
   
-  // Estados
-  const [people, setPeople] = useState<Person[]>([]);
-  const [resources, setResources] = useState<Resource[]>([]);
-  const [loadingPeople, setLoadingPeople] = useState(false);
-  const [loadingResources, setLoadingResources] = useState(false);
+  // Estados locales
   const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
   const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
-  
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
   // Hooks
-  const { createLoan, loading: creating } = useLoans();
-  const {
-    isValid,
-    validationErrors,
-    loading: validating,
-    validateLoan,
-    canPersonBorrow,
-    checkResourceAvailability
+  const { createLoan } = useLoans();
+  const { 
+    isValid, 
+    validationErrors, 
+    validationWarnings, 
+    loading: validating, 
+    validateLoan, 
+    clearValidation,
+    lastValidation 
   } = useLoanValidation();
+
+  // Colors
+  const bgColor = useColorModeValue('white', 'gray.800');
+  const borderColor = useColorModeValue('gray.200', 'gray.600');
 
   // Form
   const {
+    control,
     register,
     handleSubmit,
     watch,
@@ -140,199 +136,174 @@ export const CreateLoanModal: React.FC<CreateLoanModalProps> = ({
 
   const watchedValues = watch();
 
+  // Validación en tiempo real
+  const realtimeValidation = useRealtimeLoanValidation(
+    selectedPerson?._id,
+    selectedResource?._id,
+    watchedValues.quantity,
+    !!(selectedPerson && selectedResource && watchedValues.quantity)
+  );
+
   // ===== EFECTOS =====
 
   useEffect(() => {
     if (isOpen) {
-      loadPeople();
-      loadResources();
+      // Resetear todo cuando se abre el modal
+      resetForm();
     }
   }, [isOpen]);
 
   useEffect(() => {
-    if (watchedValues.personId && watchedValues.resourceId && watchedValues.quantity) {
-      validateCurrentLoan();
+    // Actualizar los IDs en el formulario cuando se seleccionan persona/recurso
+    if (selectedPerson) {
+      setValue('personId', selectedPerson._id);
     }
-  }, [watchedValues.personId, watchedValues.resourceId, watchedValues.quantity]);
+    if (selectedResource) {
+      setValue('resourceId', selectedResource._id);
+    }
+  }, [selectedPerson, selectedResource, setValue]);
 
-  // ===== FUNCIONES DE CARGA =====
+  // ===== FUNCIONES =====
 
-  const loadPeople = async () => {
-    setLoadingPeople(true);
-    try {
-      // Aquí deberías llamar a tu servicio para obtener personas
-      // const response = await PersonService.getPeople({ active: true });
-      // setPeople(response.data);
-      
-      // Mock data por ahora
-      setPeople([]);
-    } catch (error: any) {
+  const resetForm = () => {
+    reset();
+    setSelectedPerson(null);
+    setSelectedResource(null);
+    clearValidation();
+    setIsSubmitting(false);
+  };
+
+  const handlePersonSelect = (person: Person | null) => {
+    setSelectedPerson(person);
+    if (person) {
+      setValue('personId', person._id);
+    } else {
+      setValue('personId', '');
+    }
+    clearValidation();
+  };
+
+  const handleResourceSelect = (resource: Resource | null) => {
+    setSelectedResource(resource);
+    if (resource) {
+      setValue('resourceId', resource._id);
+    } else {
+      setValue('resourceId', '');
+    }
+    clearValidation();
+  };
+
+  const handleQuantityChange = (valueString: string, valueNumber: number) => {
+    setValue('quantity', valueNumber);
+    clearValidation();
+  };
+
+  const onSubmit = async (data: CreateLoanFormData) => {
+    if (!selectedPerson || !selectedResource) {
       toast({
         title: 'Error',
-        description: 'Error al cargar personas',
+        description: 'Debe seleccionar una persona y un recurso',
         status: 'error',
-        duration: 3000,
-        isClosable: true
+        duration: 4000,
       });
-    } finally {
-      setLoadingPeople(false);
+      return;
     }
-  };
 
-  const loadResources = async () => {
-    setLoadingResources(true);
-    try {
-      // Aquí deberías llamar a tu servicio para obtener recursos
-      // const response = await ResourceService.getResources({ available: true });
-      // setResources(response.data);
-      
-      // Mock data por ahora
-      setResources([]);
-    } catch (error: any) {
+    // Validar antes de enviar
+    if (!realtimeValidation.isValid && realtimeValidation.errors.length > 0) {
       toast({
-        title: 'Error',
-        description: 'Error al cargar recursos',
+        title: 'Validación fallida',
+        description: 'Por favor, corrija los errores antes de continuar',
         status: 'error',
-        duration: 3000,
-        isClosable: true
+        duration: 4000,
       });
-    } finally {
-      setLoadingResources(false);
+      return;
     }
-  };
 
-  // ===== VALIDACIONES =====
-
-  const validateCurrentLoan = async () => {
-    if (!watchedValues.personId || !watchedValues.resourceId) return;
+    setIsSubmitting(true);
 
     try {
-      await validateLoan({
-        personId: watchedValues.personId,
-        resourceId: watchedValues.resourceId,
-        quantity: watchedValues.quantity || 1
-      });
-    } catch (error) {
-      // Error manejado por el hook
-    }
-  };
+      const loanData: CreateLoanRequest = {
+        personId: data.personId,
+        resourceId: data.resourceId,
+        quantity: data.quantity,
+        observations: data.observations?.trim() || undefined
+      };
 
-  // ===== MANEJADORES =====
+      const newLoan = await createLoan(loanData);
 
-  // FIX: Tipos explícitos para los parámetros
-  const handleFilterChange = (key: string, value: string | number | boolean) => {
-    // Implementar filtrado si es necesario
-  };
-
-  const handlePersonChange = async (personId: string) => {
-    setValue('personId', personId);
-    
-    const person = people.find(p => p._id === personId);
-    setSelectedPerson(person || null);
-
-    if (personId) {
-      try {
-        const canBorrow = await canPersonBorrow(personId);
-        if (!canBorrow.canBorrow) {
-          toast({
-            title: 'Advertencia',
-            description: canBorrow.reason || 'Esta persona no puede tomar préstamos',
-            status: 'warning',
-            duration: 5000,
-            isClosable: true
-          });
-        }
-      } catch (error) {
-        // Error manejado por el hook
-      }
-    }
-  };
-
-  const handleResourceChange = async (resourceId: string) => {
-    setValue('resourceId', resourceId);
-    
-    const resource = resources.find(r => r._id === resourceId);
-    setSelectedResource(resource || null);
-
-    if (resourceId) {
-      try {
-        const availability = await checkResourceAvailability(resourceId);
-        if (!availability.canLoan) {
-          toast({
-            title: 'Advertencia',
-            description: 'Este recurso no tiene unidades disponibles',
-            status: 'warning',
-            duration: 5000,
-            isClosable: true
-          });
-        }
-      } catch (error) {
-        // Error manejado por el hook
-      }
-    }
-  };
-
-  const handleSubmit_Internal = async (data: CreateLoanFormData) => {
-    try {
-      const loan = await createLoan(data);
-      
       toast({
-        title: 'Éxito',
-        description: 'Préstamo creado correctamente',
+        title: 'Préstamo creado exitosamente',
+        description: `Préstamo registrado para ${selectedPerson.fullName || `${selectedPerson.firstName} ${selectedPerson.lastName}`}`,
         status: 'success',
-        duration: 3000,
-        isClosable: true
+        duration: 5000,
       });
 
-      onSuccess?.(loan);
+      onSuccess?.(newLoan);
       handleClose();
+
     } catch (error: any) {
+      console.error('Error creating loan:', error);
+      
+      const errorMessage = error?.response?.data?.message || 
+                          error?.message || 
+                          'Error al crear el préstamo';
+      
       toast({
-        title: 'Error',
-        description: error.message || 'Error al crear el préstamo',
+        title: 'Error al crear préstamo',
+        description: errorMessage,
         status: 'error',
-        duration: 5000,
-        isClosable: true
+        duration: 6000,
       });
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
   const handleClose = () => {
-    reset();
-    setSelectedPerson(null);
-    setSelectedResource(null);
-    onClose();
+    if (!isSubmitting) {
+      resetForm();
+      onClose();
+    }
   };
 
-  // ===== RENDER =====
+  // Calcular fecha de vencimiento (15 días por defecto)
+  const calculateDueDate = () => {
+    return format(addDays(new Date(), 15), 'dd/MM/yyyy');
+  };
+
+  // Determinar si el botón de envío debe estar habilitado
+  const isSubmitDisabled = !selectedPerson || 
+                          !selectedResource || 
+                          !watchedValues.quantity || 
+                          watchedValues.quantity < 1 ||
+                          isSubmitting ||
+                          realtimeValidation.isValidating ||
+                          (realtimeValidation.validation && !realtimeValidation.isValid);
 
   return (
-    <Modal isOpen={isOpen} onClose={handleClose} size="2xl">
+    <Modal 
+      isOpen={isOpen} 
+      onClose={handleClose} 
+      size="xl" 
+      closeOnOverlayClick={!isSubmitting}
+      closeOnEsc={!isSubmitting}
+    >
       <ModalOverlay />
-      <ModalContent>
+      <ModalContent maxW="600px">
         <ModalHeader>
           <HStack>
             <FiBook />
-            <Text>Crear Nuevo Préstamo</Text>
+            <Text>Registrar Nuevo Préstamo</Text>
           </HStack>
         </ModalHeader>
-        <ModalCloseButton />
+        
+        {!isSubmitting && <ModalCloseButton />}
 
-        <form onSubmit={handleSubmit(handleSubmit_Internal)}>
-          <ModalBody>
+        <ModalBody>
+          <form onSubmit={handleSubmit(onSubmit)}>
             <VStack spacing={6} align="stretch">
-              {/* Validación Global */}
-              {validationErrors.length > 0 && (
-                <Alert status="error">
-                  <AlertIcon />
-                  <Box>
-                    {validationErrors.map((error, index) => (
-                      <Text key={index} fontSize="sm">{error}</Text>
-                    ))}
-                  </Box>
-                </Alert>
-              )}
-
+              
               {/* Selección de Persona */}
               <FormControl isInvalid={!!errors.personId} isRequired>
                 <FormLabel>
@@ -341,46 +312,47 @@ export const CreateLoanModal: React.FC<CreateLoanModalProps> = ({
                     <Text>Persona</Text>
                   </HStack>
                 </FormLabel>
-                <Select
-                  placeholder="Seleccionar persona..."
-                  {...register('personId')}
-                  onChange={(e) => handlePersonChange(e.target.value)}
-                >
-                  {loadingPeople ? (
-                    <option disabled>Cargando personas...</option>
-                  ) : (
-                    people.map((person) => (
-                      <option key={person._id} value={person._id}>
-                        {person.fullName} 
-                        {person.documentNumber && ` - ${person.documentNumber}`}
-                        {person.personType && ` (${person.personType.name})`}
-                      </option>
-                    ))
-                  )}
-                </Select>
-                <FormErrorMessage>{errors.personId?.message}</FormErrorMessage>
+                <PersonSearchInput
+                  onPersonSelected={handlePersonSelect}
+                  selectedPerson={selectedPerson}
+                  placeholder="Buscar por nombre, apellido o documento..."
+                  error={errors.personId?.message}
+                  isDisabled={isSubmitting}
+                />
+                <FormHelperText>
+                  Busque y seleccione la persona que tomará el préstamo
+                </FormHelperText>
               </FormControl>
 
-              {/* Información de la Persona Seleccionada */}
+              {/* Información de la persona seleccionada */}
               {selectedPerson && (
-                <Box p={4} bg="blue.50" borderRadius="md" borderLeft="4px solid" borderColor="blue.500">
-                  <HStack justify="space-between">
-                    <VStack align="start" spacing={1}>
-                      <Text fontWeight="bold">{selectedPerson.fullName}</Text>
-                      {selectedPerson.documentNumber && (
-                        <Text fontSize="sm" color="gray.600">
-                          Documento: {selectedPerson.documentNumber}
-                        </Text>
+                <Box p={3} bg={useColorModeValue('blue.50', 'blue.900')} borderRadius="md">
+                  <VStack align="start" spacing={2}>
+                    <HStack>
+                      <Text fontWeight="bold">
+                        {selectedPerson.fullName || `${selectedPerson.firstName} ${selectedPerson.lastName}`}
+                      </Text>
+                      {selectedPerson.personType && (
+                        <Badge colorScheme={selectedPerson.personType.name === 'student' ? 'blue' : 'purple'}>
+                          {selectedPerson.personType.name === 'student' ? 'Estudiante' : 'Profesor'}
+                        </Badge>
                       )}
-                    </VStack>
-                    {selectedPerson.personType && (
-                      <Badge colorScheme={selectedPerson.personType.name === 'student' ? 'blue' : 'purple'}>
-                        {selectedPerson.personType.name === 'student' ? 'Estudiante' : 'Profesor'}
-                      </Badge>
+                    </HStack>
+                    {selectedPerson.documentNumber && (
+                      <Text fontSize="sm" color="gray.600">
+                        Documento: {selectedPerson.documentNumber}
+                      </Text>
                     )}
-                  </HStack>
+                    {selectedPerson.grade && (
+                      <Text fontSize="sm" color="gray.600">
+                        Grado: {selectedPerson.grade}
+                      </Text>
+                    )}
+                  </VStack>
                 </Box>
               )}
+
+              <Divider />
 
               {/* Selección de Recurso */}
               <FormControl isInvalid={!!errors.resourceId} isRequired>
@@ -390,118 +362,190 @@ export const CreateLoanModal: React.FC<CreateLoanModalProps> = ({
                     <Text>Recurso</Text>
                   </HStack>
                 </FormLabel>
-                <Select
-                  placeholder="Seleccionar recurso..."
-                  {...register('resourceId')}
-                  onChange={(e) => handleResourceChange(e.target.value)}
-                >
-                  {loadingResources ? (
-                    <option disabled>Cargando recursos...</option>
-                  ) : (
-                    resources.map((resource) => (
-                      <option key={resource._id} value={resource._id}>
-                        {resource.title}
-                        {resource.author && ` - ${resource.author}`}
-                        {` (Disponibles: ${resource.availableQuantity})`}
-                      </option>
-                    ))
-                  )}
-                </Select>
-                <FormErrorMessage>{errors.resourceId?.message}</FormErrorMessage>
+                <ResourceSearchInput
+                  onResourceSelected={handleResourceSelect}
+                  selectedResource={selectedResource}
+                  placeholder="Buscar por título, autor o ISBN..."
+                  error={errors.resourceId?.message}
+                  isDisabled={isSubmitting}
+                  availableOnly={true}
+                  showStock={true}
+                />
+                <FormHelperText>
+                  Busque y seleccione el recurso a prestar
+                </FormHelperText>
               </FormControl>
 
-              {/* Información del Recurso Seleccionado */}
+              {/* Información del recurso seleccionado */}
               {selectedResource && (
-                <Box p={4} bg="green.50" borderRadius="md" borderLeft="4px solid" borderColor="green.500">
+                <Box p={3} bg={useColorModeValue('green.50', 'green.900')} borderRadius="md">
                   <VStack align="start" spacing={2}>
                     <Text fontWeight="bold">{selectedResource.title}</Text>
-                    {selectedResource.author && (
+                    {selectedResource.authors && (
                       <Text fontSize="sm" color="gray.600">
-                        Autor: {selectedResource.author}
+                        Autor: {selectedResource.authors}
                       </Text>
                     )}
-                    {selectedResource.isbn && (
-                      <Text fontSize="sm" color="gray.600">
-                        ISBN: {selectedResource.isbn}
-                      </Text>
-                    )}
-                    <HStack>
-                      <Badge colorScheme="green">
-                        Disponibles: {selectedResource.availableQuantity}
-                      </Badge>
-                      <Badge colorScheme="blue">
-                        Total: {selectedResource.totalQuantity}
-                      </Badge>
+                    <HStack spacing={4}>
+                      {selectedResource.isbn && (
+                        <Text fontSize="sm" color="gray.600">
+                          ISBN: {selectedResource.isbn}
+                        </Text>
+                      )}
+                      {selectedResource.totalQuantity && (
+                        <Text fontSize="sm" color="gray.600">
+                          Stock total: {selectedResource.totalQuantity}
+                        </Text>
+                      )}
+                      {selectedResource.currentLoansCount !== undefined && (
+                        <Text fontSize="sm" color="gray.600">
+                          En préstamo: {selectedResource.currentLoansCount}
+                        </Text>
+                      )}
                     </HStack>
                   </VStack>
                 </Box>
               )}
 
+              <Divider />
+
               {/* Cantidad */}
               <FormControl isInvalid={!!errors.quantity} isRequired>
                 <FormLabel>Cantidad</FormLabel>
-                <NumberInput min={1} max={selectedResource?.availableQuantity || 50}>
-                  <NumberInputField {...register('quantity', { valueAsNumber: true })} />
-                  <NumberInputStepper>
-                    <NumberIncrementStepper />
-                    <NumberDecrementStepper />
-                  </NumberInputStepper>
-                </NumberInput>
+                <Controller
+                  name="quantity"
+                  control={control}
+                  render={({ field }) => (
+                    <NumberInput
+                      {...field}
+                      min={1}
+                      max={50}
+                      isDisabled={isSubmitting}
+                      onChange={handleQuantityChange}
+                      value={field.value || 1}
+                    >
+                      <NumberInputField />
+                      <NumberInputStepper>
+                        <NumberIncrementStepper />
+                        <NumberDecrementStepper />
+                      </NumberInputStepper>
+                    </NumberInput>
+                  )}
+                />
                 <FormErrorMessage>{errors.quantity?.message}</FormErrorMessage>
+                <FormHelperText>
+                  Cantidad de unidades a prestar (máximo 50)
+                </FormHelperText>
               </FormControl>
 
               {/* Observaciones */}
               <FormControl isInvalid={!!errors.observations}>
-                <FormLabel>
-                  <HStack>
-                    <FiFileText />
-                    <Text>Observaciones (Opcional)</Text>
-                  </HStack>
-                </FormLabel>
+                <FormLabel>Observaciones (opcional)</FormLabel>
                 <Textarea
                   {...register('observations')}
-                  placeholder="Observaciones adicionales del préstamo..."
+                  placeholder="Observaciones adicionales sobre el préstamo..."
+                  isDisabled={isSubmitting}
+                  resize="vertical"
                   rows={3}
                 />
                 <FormErrorMessage>{errors.observations?.message}</FormErrorMessage>
               </FormControl>
 
-              {/* Estado de Validación */}
-              {validating && (
-                <HStack justify="center" p={4}>
-                  <Spinner size="sm" />
-                  <Text fontSize="sm" color="gray.600">Validando préstamo...</Text>
+              {/* Información de fecha de vencimiento */}
+              <Box p={3} bg={useColorModeValue('gray.50', 'gray.700')} borderRadius="md">
+                <HStack>
+                  <FiCalendar />
+                  <Text fontSize="sm">
+                    <Text as="span" fontWeight="bold">Fecha de vencimiento:</Text>{' '}
+                    {calculateDueDate()} (15 días)
+                  </Text>
                 </HStack>
-              )}
+              </Box>
 
-              {isValid && !validating && watchedValues.personId && watchedValues.resourceId && (
-                <Alert status="success">
-                  <AlertIcon />
-                  <Text fontSize="sm">El préstamo es válido y puede ser creado</Text>
+              {/* Validaciones en tiempo real */}
+              {realtimeValidation.isValidating && (
+                <Alert status="info">
+                  <Spinner size="sm" mr={2} />
+                  <AlertDescription>Validando préstamo...</AlertDescription>
                 </Alert>
               )}
+
+              {/* Errores de validación */}
+              {realtimeValidation.errors.length > 0 && (
+                <Alert status="error">
+                  <AlertIcon />
+                  <Box>
+                    <AlertTitle>Errores encontrados:</AlertTitle>
+                    <AlertDescription>
+                      <List spacing={1} mt={2}>
+                        {realtimeValidation.errors.map((error, index) => (
+                          <ListItem key={index} fontSize="sm">
+                            <ListIcon as={FiX} color="red.500" />
+                            {error}
+                          </ListItem>
+                        ))}
+                      </List>
+                    </AlertDescription>
+                  </Box>
+                </Alert>
+              )}
+
+              {/* Advertencias de validación */}
+              {realtimeValidation.warnings.length > 0 && (
+                <Alert status="warning">
+                  <AlertIcon />
+                  <Box>
+                    <AlertTitle>Advertencias:</AlertTitle>
+                    <AlertDescription>
+                      <List spacing={1} mt={2}>
+                        {realtimeValidation.warnings.map((warning, index) => (
+                          <ListItem key={index} fontSize="sm">
+                            <ListIcon as={FiInfo} color="orange.500" />
+                            {warning}
+                          </ListItem>
+                        ))}
+                      </List>
+                    </AlertDescription>
+                  </Box>
+                </Alert>
+              )}
+
+              {/* Validación exitosa */}
+              {realtimeValidation.isValid && selectedPerson && selectedResource && (
+                <Alert status="success">
+                  <AlertIcon />
+                  <AlertDescription>
+                    ✅ El préstamo puede ser registrado sin problemas
+                  </AlertDescription>
+                </Alert>
+              )}
+
             </VStack>
-          </ModalBody>
+          </form>
+        </ModalBody>
 
-          <Divider />
-
-          <ModalFooter>
-            <HStack spacing={3}>
-              <Button variant="ghost" onClick={handleClose}>
-                Cancelar
-              </Button>
-              <Button
-                type="submit"
-                colorScheme="blue"
-                leftIcon={creating ? <Spinner size="sm" /> : <FiSave />}
-                isLoading={creating}
-                isDisabled={!isValid || creating || validating}
-              >
-                {creating ? 'Creando...' : 'Crear Préstamo'}
-              </Button>
-            </HStack>
-          </ModalFooter>
-        </form>
+        <ModalFooter>
+          <HStack spacing={3}>
+            <Button 
+              variant="ghost" 
+              onClick={handleClose}
+              isDisabled={isSubmitting}
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              colorScheme="blue"
+              onClick={handleSubmit(onSubmit)}
+              isLoading={isSubmitting}
+              loadingText="Creando préstamo..."
+              leftIcon={<FiSave />}
+              isDisabled={isSubmitDisabled}
+            >
+              Registrar Préstamo
+            </Button>
+          </HStack>
+        </ModalFooter>
       </ModalContent>
     </Modal>
   );
