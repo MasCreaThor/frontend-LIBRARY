@@ -1,12 +1,34 @@
 // src/components/loans/LoanManagement.tsx
+// ================================================================
+// COMPONENTE PRINCIPAL DE GESTIÓN DE PRÉSTAMOS - COMPLETO Y CORREGIDO
+// ================================================================
+
 import React, { useState } from 'react';
+import {
+  Box,
+  Flex,
+  VStack,
+  HStack,
+  Text,
+  Button,
+  Tabs,
+  TabList,
+  TabPanels,
+  Tab,
+  TabPanel,
+  useColorModeValue,
+  useDisclosure,
+  Container
+} from '@chakra-ui/react';
+
+// FIX: Usar react-icons/fi en lugar de lucide-react
 import { 
-  Book, 
-  Plus, 
-  RefreshCw, 
-  AlertTriangle, 
-  FileText 
-} from 'lucide-react';
+  FiBook, 
+  FiPlus, 
+  FiRefreshCw, 
+  FiAlertTriangle, 
+  FiFileText 
+} from 'react-icons/fi';
 
 // Importar componentes hijos
 import LoansList from './LoansList';
@@ -15,93 +37,197 @@ import OverdueManagement from './OverdueManagement';
 import LoanStatistics from './LoanStatistics';
 import CreateLoanModal from './CreateLoanModal';
 
-/**
- * Componente principal de gestión de préstamos
- * Ubicación: src/components/loan/LoanManagement.tsx
- */
-const LoanManagement = () => {
-  const [activeTab, setActiveTab] = useState('loans');
-  const [showCreateForm, setShowCreateForm] = useState(false);
+// ===== INTERFACES =====
 
-  const tabs = [
-    { id: 'loans', label: 'Préstamos', icon: Book },
-    { id: 'returns', label: 'Devoluciones', icon: RefreshCw },
-    { id: 'overdue', label: 'Vencidos', icon: AlertTriangle },
-    { id: 'stats', label: 'Estadísticas', icon: FileText }
+interface TabInfo {
+  id: string;
+  label: string;
+  icon: React.ElementType;
+  component: React.ComponentType;
+}
+
+// ===== COMPONENTE PRINCIPAL =====
+
+const LoanManagement: React.FC = () => {
+  const [activeTabIndex, setActiveTabIndex] = useState(0);
+  const { isOpen, onOpen, onClose } = useDisclosure();
+
+  // Valores de color mode
+  const bgColor = useColorModeValue('white', 'gray.800');
+  const borderColor = useColorModeValue('gray.200', 'gray.600');
+  const headerBg = useColorModeValue('white', 'gray.800');
+  const shadowColor = useColorModeValue('lg', 'dark-lg');
+
+  // Definir tabs con sus componentes
+  const tabs: TabInfo[] = [
+    { 
+      id: 'loans', 
+      label: 'Lista de Préstamos', 
+      icon: FiBook,
+      component: LoansList
+    },
+    { 
+      id: 'returns', 
+      label: 'Devoluciones', 
+      icon: FiRefreshCw,
+      component: ReturnsManagement
+    },
+    { 
+      id: 'overdue', 
+      label: 'Préstamos Vencidos', 
+      icon: FiAlertTriangle,
+      component: OverdueManagement
+    },
+    { 
+      id: 'stats', 
+      label: 'Estadísticas', 
+      icon: FiFileText,
+      component: LoanStatistics
+    }
   ];
 
+  // ===== MANEJADORES =====
+
   const handleLoanCreated = () => {
-    setShowCreateForm(false);
-    // Podrías disparar un evento o callback para refrescar la lista
+    onClose();
+    // Aquí podrías disparar un evento global para refrescar las listas
+    // O usar un context/estado global para manejar la actualización
     window.location.reload(); // Temporal - mejor usar estado/context
   };
 
+  // ===== RENDER =====
+
   return (
-    <div className="min-h-screen bg-gray-50">
+    <Box minH="100vh" bg={useColorModeValue('gray.50', 'gray.900')}>
       {/* Header */}
-      <div className="bg-white shadow-sm border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-4">
-              <Book className="h-8 w-8 text-blue-600" />
-              <h1 className="text-2xl font-bold text-gray-900">
+      <Box
+        bg={headerBg}
+        shadow={shadowColor}
+        borderBottom="1px"
+        borderColor={borderColor}
+        position="sticky"
+        top={0}
+        zIndex={10}
+      >
+        <Container maxW="7xl" px={{ base: 4, md: 6, lg: 8 }}>
+          <Flex 
+            align="center" 
+            justify="space-between" 
+            h={16}
+            direction={{ base: 'column', md: 'row' }}
+            gap={{ base: 4, md: 0 }}
+            py={{ base: 4, md: 0 }}
+          >
+            <HStack spacing={4}>
+              <Box
+                p={2}
+                bg="blue.500"
+                color="white"
+                rounded="lg"
+              >
+                <FiBook size={24} />
+              </Box>
+              <Text
+                fontSize={{ base: 'xl', md: '2xl' }}
+                fontWeight="bold"
+                color={useColorModeValue('gray.900', 'white')}
+              >
                 Gestión de Préstamos
-              </h1>
-            </div>
+              </Text>
+            </HStack>
             
-            <button
-              onClick={() => setShowCreateForm(true)}
-              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center space-x-2 transition-colors"
+            <Button
+              leftIcon={<FiPlus />}
+              colorScheme="blue"
+              onClick={onOpen}
+              size={{ base: 'sm', md: 'md' }}
+              w={{ base: 'full', md: 'auto' }}
             >
-              <Plus className="h-5 w-5" />
-              <span>Nuevo Préstamo</span>
-            </button>
-          </div>
-        </div>
-      </div>
+              Nuevo Préstamo
+            </Button>
+          </Flex>
+        </Container>
+      </Box>
 
-      {/* Navigation Tabs */}
-      <div className="bg-white border-b">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <nav className="flex space-x-8">
-            {tabs.map((tab) => {
-              const Icon = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center space-x-2 py-4 px-1 border-b-2 font-medium text-sm transition-colors ${
-                    activeTab === tab.id
-                      ? 'border-blue-500 text-blue-600'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
-                >
-                  <Icon className="h-5 w-5" />
-                  <span>{tab.label}</span>
-                </button>
-              );
-            })}
-          </nav>
-        </div>
-      </div>
+      {/* Contenido Principal */}
+      <Container maxW="7xl" px={{ base: 4, md: 6, lg: 8 }} py={8}>
+        <VStack spacing={8} align="stretch">
+          {/* Tabs de Navegación */}
+          <Box
+            bg={bgColor}
+            rounded="lg"
+            shadow="md"
+            border="1px"
+            borderColor={borderColor}
+            overflow="hidden"
+          >
+            <Tabs 
+              index={activeTabIndex} 
+              onChange={setActiveTabIndex}
+              variant="enclosed"
+              colorScheme="blue"
+            >
+              <TabList
+                bg={useColorModeValue('gray.50', 'gray.700')}
+                borderBottom="1px"
+                borderColor={borderColor}
+                overflowX="auto"
+                css={{
+                  scrollbarWidth: 'none',
+                  '&::-webkit-scrollbar': {
+                    display: 'none'
+                  }
+                }}
+              >
+                {tabs.map((tab, index) => {
+                  const Icon = tab.icon;
+                  return (
+                    <Tab
+                      key={tab.id}
+                      minW="fit-content"
+                      _selected={{
+                        color: 'blue.600',
+                        borderColor: 'blue.500',
+                        borderBottomColor: 'transparent',
+                        bg: bgColor
+                      }}
+                    >
+                      <HStack spacing={2}>
+                        <Icon size={16} />
+                        <Text 
+                          fontSize={{ base: 'sm', md: 'md' }}
+                          whiteSpace="nowrap"
+                        >
+                          {tab.label}
+                        </Text>
+                      </HStack>
+                    </Tab>
+                  );
+                })}
+              </TabList>
 
-      {/* Content */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {activeTab === 'loans' && <LoansList />}
-        {activeTab === 'returns' && <ReturnsManagement />}
-        {activeTab === 'overdue' && <OverdueManagement />}
-        {activeTab === 'stats' && <LoanStatistics />}
-      </div>
+              <TabPanels>
+                {tabs.map((tab, index) => {
+                  const Component = tab.component;
+                  return (
+                    <TabPanel key={tab.id} p={6}>
+                      <Component />
+                    </TabPanel>
+                  );
+                })}
+              </TabPanels>
+            </Tabs>
+          </Box>
+        </VStack>
+      </Container>
 
       {/* Modal de Crear Préstamo */}
-      {showCreateForm && (
-        <CreateLoanModal
-          isOpen={showCreateForm}
-          onClose={() => setShowCreateForm(false)}
-          onSuccess={handleLoanCreated}
-        />
-      )}
-    </div>
+      <CreateLoanModal
+        isOpen={isOpen}
+        onClose={onClose}
+        onSuccess={handleLoanCreated}
+      />
+    </Box>
   );
 };
 

@@ -1,463 +1,509 @@
 // src/components/loans/CreateLoanModal.tsx
-import React, { useState, useEffect } from 'react';
-import { 
-  X, 
-  Save, 
-  RefreshCw, 
-  AlertTriangle, 
-  CheckCircle,
-  User,
-  Book,
-  Hash,
-  FileText
-} from 'lucide-react';
+// ================================================================
+// MODAL PARA CREAR NUEVOS PRÉSTAMOS - CORREGIDO
+// ================================================================
 
-// Importar tipos y hooks
-import type { CreateLoanRequest } from '@/types/loan.types';
-import { useLoans, useValidation, useLoanForm } from '@/hooks/useLoans';
+import React, { useState, useEffect } from 'react';
+import {
+  Modal,
+  ModalOverlay,
+  ModalContent,
+  ModalHeader,
+  ModalFooter,
+  ModalBody,
+  ModalCloseButton,
+  Button,
+  FormControl,
+  FormLabel,
+  FormErrorMessage,
+  Input,
+  Textarea,
+  Select,
+  NumberInput,
+  NumberInputField,
+  NumberInputStepper,
+  NumberIncrementStepper,
+  NumberDecrementStepper,
+  VStack,
+  HStack,
+  Box,
+  Text,
+  Alert,
+  AlertIcon,
+  Spinner,
+  Badge,
+  Divider,
+  useToast
+} from '@chakra-ui/react';
+
+// FIX: Usar react-icons en lugar de lucide-react
+import { 
+  FiSave, 
+  FiRefreshCw, 
+  FiUser, 
+  FiBook, 
+  FiCalendar,
+  FiAlertTriangle,
+  FiCheckCircle,
+  FiFileText
+} from 'react-icons/fi';
+
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+
+// Importar hooks y tipos
+import { useLoans, useLoanValidation } from '@/hooks/useLoans';
+import type { CreateLoanRequest, LoanWithDetails } from '@/types/loan.types';
+
+// ===== ESQUEMA DE VALIDACIÓN =====
+
+const createLoanSchema = z.object({
+  personId: z.string().min(1, 'Debe seleccionar una persona'),
+  resourceId: z.string().min(1, 'Debe seleccionar un recurso'),
+  quantity: z.number().min(1, 'La cantidad debe ser mayor a 0').max(50, 'Cantidad máxima: 50'),
+  observations: z.string().optional()
+});
+
+type CreateLoanFormData = z.infer<typeof createLoanSchema>;
+
+// ===== INTERFACES =====
 
 interface CreateLoanModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess?: () => void;
+  onSuccess?: (loan: LoanWithDetails) => void;
 }
 
-/**
- * Modal para crear nuevos préstamos con validaciones
- * Ubicación: src/components/loan/CreateLoanModal.tsx
- */
-const CreateLoanModal: React.FC<CreateLoanModalProps> = ({ 
-  isOpen, 
-  onClose, 
-  onSuccess 
+interface Person {
+  _id: string;
+  firstName: string;
+  lastName: string;
+  fullName: string;
+  documentNumber?: string;
+  personType?: {
+    name: string;
+  };
+}
+
+interface Resource {
+  _id: string;
+  title: string;
+  author?: string;
+  isbn?: string;
+  totalQuantity: number;
+  availableQuantity: number;
+}
+
+// ===== COMPONENTE PRINCIPAL =====
+
+export const CreateLoanModal: React.FC<CreateLoanModalProps> = ({
+  isOpen,
+  onClose,
+  onSuccess
 }) => {
-  const [step, setStep] = useState(1); // 1: Datos básicos, 2: Validación, 3: Confirmación
-  const [validationResult, setValidationResult] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
+  const toast = useToast();
   
-  // Hooks personalizados
-  const { createLoan } = useLoans();
-  const { validateLoan, loading: validating } = useValidation();
-  const { 
-    formData, 
-    errors, 
-    isValid, 
-    updateField, 
-    validateForm, 
-    resetForm 
-  } = useLoanForm();
+  // Estados
+  const [people, setPeople] = useState<Person[]>([]);
+  const [resources, setResources] = useState<Resource[]>([]);
+  const [loadingPeople, setLoadingPeople] = useState(false);
+  const [loadingResources, setLoadingResources] = useState(false);
+  const [selectedPerson, setSelectedPerson] = useState<Person | null>(null);
+  const [selectedResource, setSelectedResource] = useState<Resource | null>(null);
+  
+  // Hooks
+  const { createLoan, loading: creating } = useLoans();
+  const {
+    isValid,
+    validationErrors,
+    loading: validating,
+    validateLoan,
+    canPersonBorrow,
+    checkResourceAvailability
+  } = useLoanValidation();
 
-  // Mock data - En producción estos vendrían de APIs
-  const mockPersons = [
-    { _id: '1', fullName: 'Juan Pérez', documentNumber: '12345678', grade: '5to A', personType: 'student' },
-    { _id: '2', fullName: 'María González', documentNumber: '87654321', grade: '3ro B', personType: 'student' },
-    { _id: '3', fullName: 'Prof. Carlos López', documentNumber: '11111111', grade: 'N/A', personType: 'teacher' }
-  ];
+  // Form
+  const {
+    register,
+    handleSubmit,
+    watch,
+    setValue,
+    reset,
+    formState: { errors }
+  } = useForm<CreateLoanFormData>({
+    resolver: zodResolver(createLoanSchema),
+    defaultValues: {
+      quantity: 1
+    }
+  });
 
-  const mockResources = [
-    { _id: '1', title: 'Matemáticas Básicas', author: 'Editorial Santillana', availableQuantity: 5, totalQuantity: 10 },
-    { _id: '2', title: 'Historia Universal', author: 'McGraw Hill', availableQuantity: 2, totalQuantity: 8 },
-    { _id: '3', title: 'Ciencias Naturales', author: 'Editorial Norma', availableQuantity: 8, totalQuantity: 12 }
-  ];
+  const watchedValues = watch();
+
+  // ===== EFECTOS =====
 
   useEffect(() => {
-    if (!isOpen) {
-      setStep(1);
-      setValidationResult(null);
-      resetForm();
+    if (isOpen) {
+      loadPeople();
+      loadResources();
     }
-  }, [isOpen, resetForm]);
+  }, [isOpen]);
 
-  const handleNext = async () => {
-    if (step === 1) {
-      if (!validateForm()) return;
-      
-      // Validar con el backend
-      try {
-        const result = await validateLoan(formData as CreateLoanRequest);
-        setValidationResult(result);
-        setStep(2);
-      } catch (error) {
-        console.error('Error en validación:', error);
-        alert('Error al validar el préstamo');
-      }
-    } else if (step === 2) {
-      setStep(3);
+  useEffect(() => {
+    if (watchedValues.personId && watchedValues.resourceId && watchedValues.quantity) {
+      validateCurrentLoan();
     }
-  };
+  }, [watchedValues.personId, watchedValues.resourceId, watchedValues.quantity]);
 
-  const handleSubmit = async () => {
-    if (!validationResult?.isValid) return;
-    
-    setSubmitting(true);
+  // ===== FUNCIONES DE CARGA =====
+
+  const loadPeople = async () => {
+    setLoadingPeople(true);
     try {
-      await createLoan(formData as CreateLoanRequest);
+      // Aquí deberías llamar a tu servicio para obtener personas
+      // const response = await PersonService.getPeople({ active: true });
+      // setPeople(response.data);
       
-      if (onSuccess) {
-        onSuccess();
-      }
-      onClose();
-    } catch (error) {
-      console.error('Error al crear préstamo:', error);
-      alert('Error al crear el préstamo');
+      // Mock data por ahora
+      setPeople([]);
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: 'Error al cargar personas',
+        status: 'error',
+        duration: 3000,
+        isClosable: true
+      });
     } finally {
-      setSubmitting(false);
+      setLoadingPeople(false);
     }
   };
 
-  const getSelectedPerson = () => {
-    return mockPersons.find(p => p._id === formData.personId);
+  const loadResources = async () => {
+    setLoadingResources(true);
+    try {
+      // Aquí deberías llamar a tu servicio para obtener recursos
+      // const response = await ResourceService.getResources({ available: true });
+      // setResources(response.data);
+      
+      // Mock data por ahora
+      setResources([]);
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: 'Error al cargar recursos',
+        status: 'error',
+        duration: 3000,
+        isClosable: true
+      });
+    } finally {
+      setLoadingResources(false);
+    }
   };
 
-  const getSelectedResource = () => {
-    return mockResources.find(r => r._id === formData.resourceId);
+  // ===== VALIDACIONES =====
+
+  const validateCurrentLoan = async () => {
+    if (!watchedValues.personId || !watchedValues.resourceId) return;
+
+    try {
+      await validateLoan({
+        personId: watchedValues.personId,
+        resourceId: watchedValues.resourceId,
+        quantity: watchedValues.quantity || 1
+      });
+    } catch (error) {
+      // Error manejado por el hook
+    }
   };
 
-  if (!isOpen) return null;
+  // ===== MANEJADORES =====
+
+  // FIX: Tipos explícitos para los parámetros
+  const handleFilterChange = (key: string, value: string | number | boolean) => {
+    // Implementar filtrado si es necesario
+  };
+
+  const handlePersonChange = async (personId: string) => {
+    setValue('personId', personId);
+    
+    const person = people.find(p => p._id === personId);
+    setSelectedPerson(person || null);
+
+    if (personId) {
+      try {
+        const canBorrow = await canPersonBorrow(personId);
+        if (!canBorrow.canBorrow) {
+          toast({
+            title: 'Advertencia',
+            description: canBorrow.reason || 'Esta persona no puede tomar préstamos',
+            status: 'warning',
+            duration: 5000,
+            isClosable: true
+          });
+        }
+      } catch (error) {
+        // Error manejado por el hook
+      }
+    }
+  };
+
+  const handleResourceChange = async (resourceId: string) => {
+    setValue('resourceId', resourceId);
+    
+    const resource = resources.find(r => r._id === resourceId);
+    setSelectedResource(resource || null);
+
+    if (resourceId) {
+      try {
+        const availability = await checkResourceAvailability(resourceId);
+        if (!availability.canLoan) {
+          toast({
+            title: 'Advertencia',
+            description: 'Este recurso no tiene unidades disponibles',
+            status: 'warning',
+            duration: 5000,
+            isClosable: true
+          });
+        }
+      } catch (error) {
+        // Error manejado por el hook
+      }
+    }
+  };
+
+  const handleSubmit_Internal = async (data: CreateLoanFormData) => {
+    try {
+      const loan = await createLoan(data);
+      
+      toast({
+        title: 'Éxito',
+        description: 'Préstamo creado correctamente',
+        status: 'success',
+        duration: 3000,
+        isClosable: true
+      });
+
+      onSuccess?.(loan);
+      handleClose();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Error al crear el préstamo',
+        status: 'error',
+        duration: 5000,
+        isClosable: true
+      });
+    }
+  };
+
+  const handleClose = () => {
+    reset();
+    setSelectedPerson(null);
+    setSelectedResource(null);
+    onClose();
+  };
+
+  // ===== RENDER =====
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto">
-        {/* Header */}
-        <div className="flex items-center justify-between p-6 border-b">
-          <div className="flex items-center space-x-3">
-            <div className="h-8 w-8 bg-blue-100 rounded-full flex items-center justify-center">
-              <Book className="h-5 w-5 text-blue-600" />
-            </div>
-            <div>
-              <h3 className="text-lg font-medium text-gray-900">
-                Crear Nuevo Préstamo
-              </h3>
-              <p className="text-sm text-gray-500">
-                Paso {step} de 3
-              </p>
-            </div>
-          </div>
-          <button
-            onClick={onClose}
-            className="text-gray-400 hover:text-gray-600"
-          >
-            <X className="h-6 w-6" />
-          </button>
-        </div>
+    <Modal isOpen={isOpen} onClose={handleClose} size="2xl">
+      <ModalOverlay />
+      <ModalContent>
+        <ModalHeader>
+          <HStack>
+            <FiBook />
+            <Text>Crear Nuevo Préstamo</Text>
+          </HStack>
+        </ModalHeader>
+        <ModalCloseButton />
 
-        {/* Progress Bar */}
-        <div className="px-6 py-4 border-b">
-          <div className="flex items-center space-x-4">
-            {[1, 2, 3].map((stepNumber) => (
-              <div key={stepNumber} className="flex items-center">
-                <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                  step >= stepNumber 
-                    ? 'bg-blue-600 text-white' 
-                    : 'bg-gray-200 text-gray-600'
-                }`}>
-                  {stepNumber}
-                </div>
-                {stepNumber < 3 && (
-                  <div className={`ml-4 h-1 w-16 rounded ${
-                    step > stepNumber ? 'bg-blue-600' : 'bg-gray-200'
-                  }`} />
-                )}
-              </div>
-            ))}
-          </div>
-          <div className="flex justify-between mt-2 text-sm text-gray-600">
-            <span>Datos básicos</span>
-            <span>Validación</span>
-            <span>Confirmación</span>
-          </div>
-        </div>
+        <form onSubmit={handleSubmit(handleSubmit_Internal)}>
+          <ModalBody>
+            <VStack spacing={6} align="stretch">
+              {/* Validación Global */}
+              {validationErrors.length > 0 && (
+                <Alert status="error">
+                  <AlertIcon />
+                  <Box>
+                    {validationErrors.map((error, index) => (
+                      <Text key={index} fontSize="sm">{error}</Text>
+                    ))}
+                  </Box>
+                </Alert>
+              )}
 
-        {/* Content */}
-        <div className="p-6">
-          {/* Paso 1: Datos Básicos */}
-          {step === 1 && (
-            <div className="space-y-6">
               {/* Selección de Persona */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <User className="inline h-4 w-4 mr-1" />
-                  Persona *
-                </label>
-                <select
-                  value={formData.personId || ''}
-                  onChange={(e) => updateField('personId', e.target.value)}
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                    errors.personId ? 'border-red-300' : 'border-gray-300'
-                  }`}
+              <FormControl isInvalid={!!errors.personId} isRequired>
+                <FormLabel>
+                  <HStack>
+                    <FiUser />
+                    <Text>Persona</Text>
+                  </HStack>
+                </FormLabel>
+                <Select
+                  placeholder="Seleccionar persona..."
+                  {...register('personId')}
+                  onChange={(e) => handlePersonChange(e.target.value)}
                 >
-                  <option value="">Seleccionar persona...</option>
-                  {mockPersons.map(person => (
-                    <option key={person._id} value={person._id}>
-                      {person.fullName} - {person.documentNumber} 
-                      ({person.personType === 'student' ? 'Estudiante' : 'Profesor'})
-                    </option>
-                  ))}
-                </select>
-                {errors.personId && (
-                  <p className="mt-1 text-sm text-red-600">{errors.personId}</p>
-                )}
-              </div>
+                  {loadingPeople ? (
+                    <option disabled>Cargando personas...</option>
+                  ) : (
+                    people.map((person) => (
+                      <option key={person._id} value={person._id}>
+                        {person.fullName} 
+                        {person.documentNumber && ` - ${person.documentNumber}`}
+                        {person.personType && ` (${person.personType.name})`}
+                      </option>
+                    ))
+                  )}
+                </Select>
+                <FormErrorMessage>{errors.personId?.message}</FormErrorMessage>
+              </FormControl>
+
+              {/* Información de la Persona Seleccionada */}
+              {selectedPerson && (
+                <Box p={4} bg="blue.50" borderRadius="md" borderLeft="4px solid" borderColor="blue.500">
+                  <HStack justify="space-between">
+                    <VStack align="start" spacing={1}>
+                      <Text fontWeight="bold">{selectedPerson.fullName}</Text>
+                      {selectedPerson.documentNumber && (
+                        <Text fontSize="sm" color="gray.600">
+                          Documento: {selectedPerson.documentNumber}
+                        </Text>
+                      )}
+                    </VStack>
+                    {selectedPerson.personType && (
+                      <Badge colorScheme={selectedPerson.personType.name === 'student' ? 'blue' : 'purple'}>
+                        {selectedPerson.personType.name === 'student' ? 'Estudiante' : 'Profesor'}
+                      </Badge>
+                    )}
+                  </HStack>
+                </Box>
+              )}
 
               {/* Selección de Recurso */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <Book className="inline h-4 w-4 mr-1" />
-                  Recurso *
-                </label>
-                <select
-                  value={formData.resourceId || ''}
-                  onChange={(e) => updateField('resourceId', e.target.value)}
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                    errors.resourceId ? 'border-red-300' : 'border-gray-300'
-                  }`}
+              <FormControl isInvalid={!!errors.resourceId} isRequired>
+                <FormLabel>
+                  <HStack>
+                    <FiBook />
+                    <Text>Recurso</Text>
+                  </HStack>
+                </FormLabel>
+                <Select
+                  placeholder="Seleccionar recurso..."
+                  {...register('resourceId')}
+                  onChange={(e) => handleResourceChange(e.target.value)}
                 >
-                  <option value="">Seleccionar recurso...</option>
-                  {mockResources.map(resource => (
-                    <option key={resource._id} value={resource._id}>
-                      {resource.title} - {resource.author} 
-                      ({resource.availableQuantity} disponibles)
-                    </option>
-                  ))}
-                </select>
-                {errors.resourceId && (
-                  <p className="mt-1 text-sm text-red-600">{errors.resourceId}</p>
-                )}
-              </div>
+                  {loadingResources ? (
+                    <option disabled>Cargando recursos...</option>
+                  ) : (
+                    resources.map((resource) => (
+                      <option key={resource._id} value={resource._id}>
+                        {resource.title}
+                        {resource.author && ` - ${resource.author}`}
+                        {` (Disponibles: ${resource.availableQuantity})`}
+                      </option>
+                    ))
+                  )}
+                </Select>
+                <FormErrorMessage>{errors.resourceId?.message}</FormErrorMessage>
+              </FormControl>
+
+              {/* Información del Recurso Seleccionado */}
+              {selectedResource && (
+                <Box p={4} bg="green.50" borderRadius="md" borderLeft="4px solid" borderColor="green.500">
+                  <VStack align="start" spacing={2}>
+                    <Text fontWeight="bold">{selectedResource.title}</Text>
+                    {selectedResource.author && (
+                      <Text fontSize="sm" color="gray.600">
+                        Autor: {selectedResource.author}
+                      </Text>
+                    )}
+                    {selectedResource.isbn && (
+                      <Text fontSize="sm" color="gray.600">
+                        ISBN: {selectedResource.isbn}
+                      </Text>
+                    )}
+                    <HStack>
+                      <Badge colorScheme="green">
+                        Disponibles: {selectedResource.availableQuantity}
+                      </Badge>
+                      <Badge colorScheme="blue">
+                        Total: {selectedResource.totalQuantity}
+                      </Badge>
+                    </HStack>
+                  </VStack>
+                </Box>
+              )}
 
               {/* Cantidad */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <Hash className="inline h-4 w-4 mr-1" />
-                  Cantidad *
-                </label>
-                <input
-                  type="number"
-                  min="1"
-                  max="50"
-                  value={formData.quantity || 1}
-                  onChange={(e) => updateField('quantity', parseInt(e.target.value) || 1)}
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 ${
-                    errors.quantity ? 'border-red-300' : 'border-gray-300'
-                  }`}
-                />
-                {errors.quantity && (
-                  <p className="mt-1 text-sm text-red-600">{errors.quantity}</p>
-                )}
-                <p className="mt-1 text-sm text-gray-500">
-                  Máximo 50 unidades por préstamo
-                </p>
-              </div>
+              <FormControl isInvalid={!!errors.quantity} isRequired>
+                <FormLabel>Cantidad</FormLabel>
+                <NumberInput min={1} max={selectedResource?.availableQuantity || 50}>
+                  <NumberInputField {...register('quantity', { valueAsNumber: true })} />
+                  <NumberInputStepper>
+                    <NumberIncrementStepper />
+                    <NumberDecrementStepper />
+                  </NumberInputStepper>
+                </NumberInput>
+                <FormErrorMessage>{errors.quantity?.message}</FormErrorMessage>
+              </FormControl>
 
               {/* Observaciones */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  <FileText className="inline h-4 w-4 mr-1" />
-                  Observaciones
-                </label>
-                <textarea
+              <FormControl isInvalid={!!errors.observations}>
+                <FormLabel>
+                  <HStack>
+                    <FiFileText />
+                    <Text>Observaciones (Opcional)</Text>
+                  </HStack>
+                </FormLabel>
+                <Textarea
+                  {...register('observations')}
+                  placeholder="Observaciones adicionales del préstamo..."
                   rows={3}
-                  value={formData.observations || ''}
-                  onChange={(e) => updateField('observations', e.target.value)}
-                  placeholder="Observaciones adicionales sobre el préstamo..."
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500"
                 />
-                <p className="mt-1 text-sm text-gray-500">
-                  Máximo 500 caracteres
-                </p>
-              </div>
-            </div>
-          )}
+                <FormErrorMessage>{errors.observations?.message}</FormErrorMessage>
+              </FormControl>
 
-          {/* Paso 2: Validación */}
-          {step === 2 && validationResult && (
-            <div className="space-y-6">
-              <div className="text-center">
-                <h4 className="text-lg font-medium text-gray-900 mb-4">
-                  Resultado de la Validación
-                </h4>
-              </div>
-
-              {/* Estado General */}
-              <div className={`p-4 rounded-lg border ${
-                validationResult.isValid 
-                  ? 'bg-green-50 border-green-200' 
-                  : 'bg-red-50 border-red-200'
-              }`}>
-                <div className="flex items-center">
-                  {validationResult.isValid ? (
-                    <CheckCircle className="h-5 w-5 text-green-600 mr-2" />
-                  ) : (
-                    <AlertTriangle className="h-5 w-5 text-red-600 mr-2" />
-                  )}
-                  <span className={`font-medium ${
-                    validationResult.isValid ? 'text-green-800' : 'text-red-800'
-                  }`}>
-                    {validationResult.isValid ? 'Préstamo válido' : 'Préstamo no válido'}
-                  </span>
-                </div>
-              </div>
-
-              {/* Errores */}
-              {validationResult.errors && validationResult.errors.length > 0 && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                  <h5 className="font-medium text-red-800 mb-2">Errores encontrados:</h5>
-                  <ul className="list-disc list-inside space-y-1">
-                    {validationResult.errors.map((error, index) => (
-                      <li key={index} className="text-red-700 text-sm">{error}</li>
-                    ))}
-                  </ul>
-                </div>
+              {/* Estado de Validación */}
+              {validating && (
+                <HStack justify="center" p={4}>
+                  <Spinner size="sm" />
+                  <Text fontSize="sm" color="gray.600">Validando préstamo...</Text>
+                </HStack>
               )}
 
-              {/* Advertencias */}
-              {validationResult.warnings && validationResult.warnings.length > 0 && (
-                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                  <h5 className="font-medium text-yellow-800 mb-2">Advertencias:</h5>
-                  <ul className="list-disc list-inside space-y-1">
-                    {validationResult.warnings.map((warning, index) => (
-                      <li key={index} className="text-yellow-700 text-sm">{warning}</li>
-                    ))}
-                  </ul>
-                </div>
+              {isValid && !validating && watchedValues.personId && watchedValues.resourceId && (
+                <Alert status="success">
+                  <AlertIcon />
+                  <Text fontSize="sm">El préstamo es válido y puede ser creado</Text>
+                </Alert>
               )}
+            </VStack>
+          </ModalBody>
 
-              {/* Información Detallada */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                  <h5 className="font-medium text-blue-800 mb-2">Información de Persona</h5>
-                  <div className="space-y-1 text-sm text-blue-700">
-                    <p>Puede prestar: {validationResult.personInfo.canBorrow ? 'Sí' : 'No'}</p>
-                    <p>Préstamos activos: {validationResult.personInfo.activeLoans}</p>
-                    <p>Máximo permitido: {validationResult.personInfo.maxLoans}</p>
-                    <p>Tipo: {validationResult.personInfo.personType}</p>
-                  </div>
-                </div>
+          <Divider />
 
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                  <h5 className="font-medium text-green-800 mb-2">Información de Recurso</h5>
-                  <div className="space-y-1 text-sm text-green-700">
-                    <p>Disponible: {validationResult.resourceInfo.available ? 'Sí' : 'No'}</p>
-                    <p>Cantidad total: {validationResult.resourceInfo.totalQuantity}</p>
-                    <p>Prestados actualmente: {validationResult.resourceInfo.currentLoans}</p>
-                    <p>Disponibles: {validationResult.resourceInfo.availableQuantity}</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
-                <h5 className="font-medium text-purple-800 mb-2">Información de Cantidad</h5>
-                <div className="space-y-1 text-sm text-purple-700">
-                  <p>Cantidad solicitada: {validationResult.quantityInfo.requested}</p>
-                  <p>Máximo permitido: {validationResult.quantityInfo.maxAllowed}</p>
-                  <p>Razón: {validationResult.quantityInfo.reason}</p>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Paso 3: Confirmación */}
-          {step === 3 && (
-            <div className="space-y-6">
-              <div className="text-center">
-                <CheckCircle className="h-16 w-16 text-green-600 mx-auto mb-4" />
-                <h4 className="text-lg font-medium text-gray-900 mb-2">
-                  Confirmar Préstamo
-                </h4>
-                <p className="text-gray-600">
-                  Revisa los datos antes de crear el préstamo
-                </p>
-              </div>
-
-              {/* Resumen del Préstamo */}
-              <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
-                <h5 className="font-medium text-gray-900 mb-4">Resumen del Préstamo</h5>
-                
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <h6 className="font-medium text-gray-700 mb-2">Persona</h6>
-                    <div className="text-sm text-gray-600">
-                      <p>{getSelectedPerson()?.fullName}</p>
-                      <p>{getSelectedPerson()?.documentNumber}</p>
-                      <p className="capitalize">
-                        {getSelectedPerson()?.personType === 'student' ? 'Estudiante' : 'Profesor'}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div>
-                    <h6 className="font-medium text-gray-700 mb-2">Recurso</h6>
-                    <div className="text-sm text-gray-600">
-                      <p>{getSelectedResource()?.title}</p>
-                      <p>{getSelectedResource()?.author}</p>
-                      <p>Cantidad: {formData.quantity}</p>
-                    </div>
-                  </div>
-                </div>
-
-                {formData.observations && (
-                  <div className="mt-4">
-                    <h6 className="font-medium text-gray-700 mb-2">Observaciones</h6>
-                    <p className="text-sm text-gray-600">{formData.observations}</p>
-                  </div>
-                )}
-
-                <div className="mt-4 pt-4 border-t border-gray-200">
-                  <div className="text-sm text-gray-600">
-                    <p><strong>Fecha de préstamo:</strong> {new Date().toLocaleDateString('es-ES')}</p>
-                    <p><strong>Fecha de vencimiento:</strong> {new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toLocaleDateString('es-ES')}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center justify-between px-6 py-4 bg-gray-50 border-t">
-          <div className="flex space-x-3">
-            {step > 1 && (
-              <button
-                onClick={() => setStep(step - 1)}
-                className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
+          <ModalFooter>
+            <HStack spacing={3}>
+              <Button variant="ghost" onClick={handleClose}>
+                Cancelar
+              </Button>
+              <Button
+                type="submit"
+                colorScheme="blue"
+                leftIcon={creating ? <Spinner size="sm" /> : <FiSave />}
+                isLoading={creating}
+                isDisabled={!isValid || creating || validating}
               >
-                Anterior
-              </button>
-            )}
-          </div>
-
-          <div className="flex space-x-3">
-            <button
-              onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50"
-            >
-              Cancelar
-            </button>
-            
-            {step < 3 ? (
-              <button
-                onClick={handleNext}
-                disabled={!isValid || validating}
-                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-lg hover:bg-blue-700 disabled:opacity-50 flex items-center space-x-2"
-              >
-                {validating && <RefreshCw className="h-4 w-4 animate-spin" />}
-                <span>{step === 1 ? 'Validar' : 'Siguiente'}</span>
-              </button>
-            ) : (
-              <button
-                onClick={handleSubmit}
-                disabled={!validationResult?.isValid || submitting}
-                className="px-4 py-2 text-sm font-medium text-white bg-green-600 border border-transparent rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center space-x-2"
-              >
-                {submitting && <RefreshCw className="h-4 w-4 animate-spin" />}
-                <Save className="h-4 w-4" />
-                <span>{submitting ? 'Creando...' : 'Crear Préstamo'}</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
+                {creating ? 'Creando...' : 'Crear Préstamo'}
+              </Button>
+            </HStack>
+          </ModalFooter>
+        </form>
+      </ModalContent>
+    </Modal>
   );
 };
 

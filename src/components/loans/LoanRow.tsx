@@ -1,346 +1,441 @@
 // src/components/loans/LoanRow.tsx
+// ================================================================
+// COMPONENTE DE FILA INDIVIDUAL DE PRÉSTAMO - COMPLETO Y CORREGIDO
+// ================================================================
+
 import React, { useState } from 'react';
+import {
+  Box,
+  Tr,
+  Td,
+  Text,
+  Badge,
+  Button,
+  HStack,
+  VStack,
+  Menu,
+  MenuButton,
+  MenuList,
+  MenuItem,
+  IconButton,
+  useToast,
+  useColorModeValue,
+  Tooltip,
+  AlertDialog,
+  AlertDialogOverlay,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogBody,
+  AlertDialogFooter,
+  useDisclosure
+} from '@chakra-ui/react';
+
+// FIX: Usar react-icons/fi en lugar de lucide-react
 import { 
-  Calendar, 
-  Clock, 
-  User, 
-  CheckCircle, 
-  AlertTriangle, 
-  XCircle,
-  Eye,
-  RotateCcw,
-  RefreshCw,
-  MoreHorizontal
-} from 'lucide-react';
+  FiCalendar, 
+  FiClock, 
+  FiUser, 
+  FiCheckCircle, 
+  FiAlertTriangle, 
+  FiXCircle,
+  FiEye,
+  FiRotateCcw,
+  FiRefreshCw,
+  FiMoreHorizontal,
+  FiCheck,
+  FiX
+} from 'react-icons/fi';
 
-// Importar tipos
+import { format } from 'date-fns';
+import { es } from 'date-fns/locale';
+
+// Importar tipos y hooks
 import type { LoanWithDetails } from '@/types/loan.types';
-
-// Importar servicios y hooks
-import { LoanService } from '@/services/loan.service';
 import { useReturn } from '@/hooks/useLoans';
+import { LoanService } from '@/services/loan.service';
+
+// ===== INTERFACES =====
 
 interface LoanRowProps {
   loan: LoanWithDetails;
   onUpdate?: () => void;
+  onViewDetails?: (loan: LoanWithDetails) => void;
+  onReturnLoan?: (loan: LoanWithDetails) => void;
 }
 
-/**
- * Componente de fila individual de préstamo
- * Ubicación: src/components/loan/LoanRow.tsx
- */
-const LoanRow: React.FC<LoanRowProps> = ({ loan, onUpdate }) => {
-  const [showActions, setShowActions] = useState(false);
+// ===== COMPONENTE PRINCIPAL =====
+
+const LoanRow: React.FC<LoanRowProps> = ({ 
+  loan, 
+  onUpdate, 
+  onViewDetails,
+  onReturnLoan 
+}) => {
+  const toast = useToast();
+  const { isOpen, onOpen, onClose } = useDisclosure();
   const [processing, setProcessing] = useState(false);
-  
-  const { processReturn } = useReturn();
+  const [renewLoading, setRenewLoading] = useState(false);
+  const cancelRef = React.useRef<HTMLButtonElement>(null);
+
+  // Hooks
+  const { returnLoan } = useReturn();
+
+  // Color values
+  const bgColor = useColorModeValue('white', 'gray.800');
+  const hoverBg = useColorModeValue('gray.50', 'gray.700');
+  const borderColor = useColorModeValue('gray.200', 'gray.600');
+
+  // ===== FUNCIONES DE UTILIDAD =====
 
   const formatDate = (date: Date | string) => {
-    return new Date(date).toLocaleDateString('es-ES', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric'
-    });
+    try {
+      const dateObj = typeof date === 'string' ? new Date(date) : date;
+      return format(dateObj, 'dd/MM/yyyy', { locale: es });
+    } catch {
+      return 'Fecha inválida';
+    }
   };
 
   const getStatusInfo = (loan: LoanWithDetails) => {
     if (loan.status?.name === 'returned') {
       return {
-        icon: CheckCircle,
+        icon: FiCheckCircle,
         label: 'Devuelto',
-        color: '#10b981',
-        bgColor: '#10b98120'
+        colorScheme: 'green',
+        variant: 'solid' as const
       };
     }
     
     if (loan.isOverdue) {
       return {
-        icon: AlertTriangle,
-        label: 'Vencido',
-        color: '#ef4444',
-        bgColor: '#ef444420'
+        icon: FiAlertTriangle,
+        label: `Vencido (${loan.daysOverdue} días)`,
+        colorScheme: 'red',
+        variant: 'solid' as const
       };
     }
     
     if (loan.status?.name === 'lost') {
       return {
-        icon: XCircle,
+        icon: FiXCircle,
         label: 'Perdido',
-        color: '#6b7280',
-        bgColor: '#6b728020'
+        colorScheme: 'gray',
+        variant: 'solid' as const
+      };
+    }
+
+    // Verificar si vence hoy
+    const today = new Date();
+    const dueDate = new Date(loan.dueDate);
+    const isDueToday = dueDate.toDateString() === today.toDateString();
+    
+    if (isDueToday) {
+      return {
+        icon: FiClock,
+        label: 'Vence hoy',
+        colorScheme: 'orange',
+        variant: 'solid' as const
       };
     }
     
     return {
-      icon: CheckCircle,
+      icon: FiCheckCircle,
       label: 'Activo',
-      color: '#10b981',
-      bgColor: '#10b98120'
+      colorScheme: 'green',
+      variant: 'outline' as const
     };
   };
 
-  const handleQuickReturn = async () => {
-    if (!confirm('¿Confirmas que quieres procesar esta devolución?')) {
-      return;
-    }
+  const getPersonTypeBadge = (personType?: { name: string }) => {
+    if (!personType) return null;
+    
+    return (
+      <Badge
+        size="sm"
+        colorScheme={personType.name === 'student' ? 'blue' : 'purple'}
+        variant="subtle"
+      >
+        {personType.name === 'student' ? 'Estudiante' : 'Profesor'}
+      </Badge>
+    );
+  };
 
+  // ===== MANEJADORES =====
+
+  const handleQuickReturn = async () => {
     setProcessing(true);
     try {
-      await processReturn({
+      await returnLoan({
         loanId: loan._id,
         returnDate: new Date().toISOString(),
         resourceCondition: 'good',
         returnObservations: 'Devolución rápida desde la lista'
       });
       
-      if (onUpdate) {
-        onUpdate();
-      }
-    } catch (error) {
-      console.error('Error en devolución rápida:', error);
-      alert('Error al procesar la devolución');
+      toast({
+        title: 'Éxito',
+        description: 'Préstamo devuelto correctamente',
+        status: 'success',
+        duration: 3000,
+        isClosable: true
+      });
+      
+      onUpdate?.();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Error al procesar la devolución',
+        status: 'error',
+        duration: 5000,
+        isClosable: true
+      });
     } finally {
       setProcessing(false);
+      onClose();
     }
   };
 
   const handleRenewLoan = async () => {
-    if (!confirm('¿Quieres renovar este préstamo por 15 días más?')) {
-      return;
-    }
-
-    setProcessing(true);
+    setRenewLoading(true);
     try {
-      const newDueDate = new Date();
-      newDueDate.setDate(newDueDate.getDate() + 15);
+      await LoanService.renewLoan(loan._id);
       
-      await LoanService.renewLoan(loan._id, newDueDate.toISOString());
+      toast({
+        title: 'Éxito',
+        description: 'Préstamo renovado por 15 días más',
+        status: 'success',
+        duration: 3000,
+        isClosable: true
+      });
       
-      if (onUpdate) {
-        onUpdate();
-      }
-    } catch (error) {
-      console.error('Error al renovar préstamo:', error);
-      alert('Error al renovar el préstamo');
+      onUpdate?.();
+    } catch (error: any) {
+      toast({
+        title: 'Error',
+        description: error.message || 'Error al renovar el préstamo',
+        status: 'error',
+        duration: 5000,
+        isClosable: true
+      });
     } finally {
-      setProcessing(false);
+      setRenewLoading(false);
     }
   };
 
   const handleViewDetails = () => {
-    // Aquí podrías abrir un modal de detalles o navegar a otra página
-    console.log('Ver detalles del préstamo:', loan._id);
+    onViewDetails?.(loan);
   };
+
+  const handleProcessReturn = () => {
+    onReturnLoan?.(loan);
+  };
+
+  // ===== INFORMACIÓN DEL ESTADO =====
 
   const statusInfo = getStatusInfo(loan);
   const StatusIcon = statusInfo.icon;
-  const isActive = loan.status?.name === 'active';
-  const canReturn = isActive && !processing;
-  const canRenew = isActive && !loan.isOverdue && !processing;
+  const canReturn = loan.status?.name === 'active' || loan.isOverdue;
+  const canRenew = loan.status?.name === 'active' && !loan.isOverdue;
+
+  // ===== RENDER =====
 
   return (
-    <tr className="hover:bg-gray-50 transition-colors">
-      {/* Información de Persona */}
-      <td className="px-6 py-4 whitespace-nowrap">
-        <div className="flex items-center">
-          <div className="flex-shrink-0 h-10 w-10">
-            <div className="h-10 w-10 rounded-full bg-blue-100 flex items-center justify-center">
-              <User className="h-6 w-6 text-blue-600" />
-            </div>
-          </div>
-          <div className="ml-4">
-            <div className="text-sm font-medium text-gray-900">
-              {loan.person?.fullName || 'Persona no disponible'}
-            </div>
-            <div className="text-sm text-gray-500">
-              {loan.person?.documentNumber && `${loan.person.documentNumber} • `}
-              {loan.person?.grade || 'Sin grado'}
-            </div>
-            {loan.person?.personType && (
-              <div className="text-xs text-blue-600 bg-blue-50 px-2 py-1 rounded-full inline-block mt-1">
-                {loan.person.personType.name === 'student' ? 'Estudiante' : 'Profesor'}
-              </div>
+    <>
+      <Tr _hover={{ bg: hoverBg }} transition="background-color 0.2s">
+        {/* Información de la Persona */}
+        <Td>
+          <VStack align="start" spacing={1}>
+            <Text fontWeight="medium" fontSize="sm">
+              {loan.person?.fullName || 'N/A'}
+            </Text>
+            <HStack spacing={2}>
+              {getPersonTypeBadge(loan.person?.personType)}
+              {loan.person?.documentNumber && (
+                <Text fontSize="xs" color="gray.500">
+                  {loan.person.documentNumber}
+                </Text>
+              )}
+            </HStack>
+          </VStack>
+        </Td>
+
+        {/* Información del Recurso */}
+        <Td>
+          <VStack align="start" spacing={1}>
+            <Text fontWeight="medium" fontSize="sm" noOfLines={2}>
+              {loan.resource?.title || 'N/A'}
+            </Text>
+            {loan.resource?.author && (
+              <Text fontSize="xs" color="gray.500" noOfLines={1}>
+                {loan.resource.author}
+              </Text>
             )}
-          </div>
-        </div>
-      </td>
+          </VStack>
+        </Td>
 
-      {/* Información de Recurso */}
-      <td className="px-6 py-4">
-        <div className="text-sm text-gray-900 font-medium line-clamp-2">
-          {loan.resource?.title || 'Recurso no disponible'}
-        </div>
-        <div className="text-sm text-gray-500">
-          {loan.resource?.author && `${loan.resource.author} • `}
-          {loan.resource?.isbn && `ISBN: ${loan.resource.isbn}`}
-        </div>
-        {loan.resource?.totalQuantity !== undefined && (
-          <div className="text-xs text-gray-400 mt-1">
-            Stock: {loan.resource.availableQuantity || 0}/{loan.resource.totalQuantity}
-            {loan.resource.currentLoansCount !== undefined && 
-              ` (${loan.resource.currentLoansCount} prestados)`
-            }
-          </div>
-        )}
-      </td>
+        {/* Fecha de Préstamo */}
+        <Td>
+          <HStack spacing={2}>
+            <FiCalendar size={14} color="gray" />
+            <Text fontSize="sm">{formatDate(loan.loanDate)}</Text>
+          </HStack>
+        </Td>
 
-      {/* Cantidad */}
-      <td className="px-6 py-4 whitespace-nowrap">
-        <div className="text-sm text-gray-900 font-medium">
-          {loan.quantity} unidad{loan.quantity > 1 ? 'es' : ''}
-        </div>
-      </td>
-
-      {/* Fechas */}
-      <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-        <div className="space-y-1">
-          <div className="flex items-center">
-            <Calendar className="h-4 w-4 mr-1" />
-            <span>Prestado: {formatDate(loan.loanDate)}</span>
-          </div>
-          <div className="flex items-center">
-            <Clock className={`h-4 w-4 mr-1 ${loan.isOverdue ? 'text-red-500' : ''}`} />
-            <span className={loan.isOverdue ? 'text-red-600' : ''}>
-              Vence: {formatDate(loan.dueDate)}
-            </span>
-          </div>
-          {loan.isOverdue && loan.daysOverdue && (
-            <div className="text-red-600 font-medium text-xs">
-              {loan.daysOverdue} días de retraso
-            </div>
-          )}
-          {loan.returnedDate && (
-            <div className="flex items-center text-green-600">
-              <CheckCircle className="h-4 w-4 mr-1" />
-              <span>Devuelto: {formatDate(loan.returnedDate)}</span>
-            </div>
-          )}
-        </div>
-      </td>
-
-      {/* Estado */}
-      <td className="px-6 py-4 whitespace-nowrap">
-        <span
-          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
-          style={{
-            backgroundColor: statusInfo.bgColor,
-            color: statusInfo.color
-          }}
-        >
-          <StatusIcon className="h-3 w-3 mr-1" />
-          {statusInfo.label}
-        </span>
-      </td>
-
-      {/* Acciones */}
-      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-        <div className="flex items-center justify-end space-x-2">
-          {/* Botón Ver Detalles */}
-          <button
-            onClick={handleViewDetails}
-            className="text-blue-600 hover:text-blue-900 transition-colors p-1 rounded-md hover:bg-blue-50"
-            title="Ver detalles"
-          >
-            <Eye className="h-4 w-4" />
-          </button>
-
-          {/* Acciones para préstamos activos */}
-          {isActive && (
-            <>
-              {/* Botón Devolución Rápida */}
-              {canReturn && (
-                <button
-                  onClick={handleQuickReturn}
-                  disabled={processing}
-                  className="text-green-600 hover:text-green-900 transition-colors p-1 rounded-md hover:bg-green-50 disabled:opacity-50"
-                  title="Devolución rápida"
-                >
-                  {processing ? (
-                    <RefreshCw className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <RotateCcw className="h-4 w-4" />
-                  )}
-                </button>
-              )}
-
-              {/* Botón Renovar */}
-              {canRenew && (
-                <button
-                  onClick={handleRenewLoan}
-                  disabled={processing}
-                  className="text-yellow-600 hover:text-yellow-900 transition-colors p-1 rounded-md hover:bg-yellow-50 disabled:opacity-50"
-                  title="Renovar préstamo"
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </button>
-              )}
-            </>
-          )}
-
-          {/* Menú de más acciones */}
-          <div className="relative">
-            <button
-              onClick={() => setShowActions(!showActions)}
-              className="text-gray-400 hover:text-gray-600 transition-colors p-1 rounded-md hover:bg-gray-50"
+        {/* Fecha de Vencimiento */}
+        <Td>
+          <HStack spacing={2}>
+            <FiClock 
+              size={14} 
+              color={loan.isOverdue ? "red" : "gray"} 
+            />
+            <Text 
+              fontSize="sm"
+              color={loan.isOverdue ? "red.500" : "gray.600"}
             >
-              <MoreHorizontal className="h-4 w-4" />
-            </button>
+              {formatDate(loan.dueDate)}
+            </Text>
+          </HStack>
+        </Td>
 
-            {showActions && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-md shadow-lg ring-1 ring-black ring-opacity-5 z-10">
-                <div className="py-1">
-                  <button
-                    onClick={() => {
-                      handleViewDetails();
-                      setShowActions(false);
-                    }}
-                    className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                  >
-                    Ver detalles completos
-                  </button>
-                  
-                  {isActive && (
-                    <>
-                      <button
-                        onClick={() => {
-                          // Abrir modal de devolución completa
-                          setShowActions(false);
-                        }}
-                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                      >
-                        Devolución con detalles
-                      </button>
-                      
-                      <button
-                        onClick={() => {
-                          // Editar préstamo
-                          setShowActions(false);
-                        }}
-                        className="block w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
-                      >
-                        Editar préstamo
-                      </button>
-                      
-                      {loan.isOverdue && (
-                        <button
-                          onClick={() => {
-                            // Marcar como perdido
-                            setShowActions(false);
-                          }}
-                          className="block w-full text-left px-4 py-2 text-sm text-red-700 hover:bg-red-50"
-                        >
-                          Marcar como perdido
-                        </button>
-                      )}
-                    </>
-                  )}
-                </div>
-              </div>
+        {/* Estado */}
+        <Td>
+          <Badge
+            colorScheme={statusInfo.colorScheme}
+            variant={statusInfo.variant}
+          >
+            <StatusIcon size={12} style={{ marginRight: 4, verticalAlign: 'middle' }} />
+            {statusInfo.label}
+          </Badge>
+        </Td>
+
+        {/* Cantidad */}
+        <Td>
+          <Badge colorScheme="blue" variant="outline">
+            {loan.quantity}
+          </Badge>
+        </Td>
+
+        {/* Acciones */}
+        <Td>
+          <HStack spacing={2}>
+            {/* Acciones Rápidas */}
+            {canReturn && (
+              <Tooltip label="Devolución rápida">
+                <IconButton
+                  size="sm"
+                  aria-label="Devolución rápida"
+                  icon={<FiCheck />}
+                  colorScheme="green"
+                  variant="outline"
+                  onClick={onOpen}
+                  isDisabled={processing}
+                />
+              </Tooltip>
             )}
-          </div>
-        </div>
-      </td>
-    </tr>
+
+            <Tooltip label="Ver detalles">
+              <IconButton
+                size="sm"
+                aria-label="Ver detalles"
+                icon={<FiEye />}
+                variant="outline"
+                onClick={handleViewDetails}
+              />
+            </Tooltip>
+
+            {/* Menú de Más Opciones */}
+            <Menu>
+              <MenuButton
+                as={IconButton}
+                size="sm"
+                aria-label="Más opciones"
+                icon={<FiMoreHorizontal />}
+                variant="outline"
+              >
+              </MenuButton>
+              <MenuList>
+                {canReturn && (
+                  <MenuItem
+                    icon={<FiRotateCcw />}
+                    onClick={handleProcessReturn}
+                  >
+                    Procesar Devolución
+                  </MenuItem>
+                )}
+                
+                {canRenew && (
+                  <MenuItem
+                    icon={<FiRefreshCw />}
+                    onClick={handleRenewLoan}
+                    isDisabled={renewLoading}
+                  >
+                    {renewLoading ? 'Renovando...' : 'Renovar Préstamo'}
+                  </MenuItem>
+                )}
+                
+                <MenuItem icon={<FiEye />} onClick={handleViewDetails}>
+                  Ver Detalles Completos
+                </MenuItem>
+              </MenuList>
+            </Menu>
+          </HStack>
+        </Td>
+      </Tr>
+
+      {/* Diálogo de Confirmación de Devolución Rápida */}
+      <AlertDialog
+        isOpen={isOpen}
+        leastDestructiveRef={cancelRef}
+        onClose={onClose}
+      >
+        <AlertDialogOverlay>
+          <AlertDialogContent>
+            <AlertDialogHeader fontSize="lg" fontWeight="bold">
+              Confirmar Devolución Rápida
+            </AlertDialogHeader>
+
+            <AlertDialogBody>
+              <VStack align="start" spacing={3}>
+                <Text>
+                  ¿Estás seguro de que quieres procesar la devolución de este préstamo?
+                </Text>
+                
+                <Box p={3} bg="blue.50" rounded="md" w="full">
+                  <Text fontSize="sm" fontWeight="medium">
+                    {loan.person?.fullName}
+                  </Text>
+                  <Text fontSize="sm" color="gray.600">
+                    {loan.resource?.title}
+                  </Text>
+                  <Text fontSize="xs" color="gray.500">
+                    Cantidad: {loan.quantity}
+                  </Text>
+                </Box>
+
+                <Text fontSize="sm" color="gray.600">
+                  Esto marcará el recurso como devuelto en buen estado.
+                </Text>
+              </VStack>
+            </AlertDialogBody>
+
+            <AlertDialogFooter>
+              <Button ref={cancelRef} onClick={onClose}>
+                Cancelar
+              </Button>
+              <Button
+                colorScheme="green"
+                onClick={handleQuickReturn}
+                ml={3}
+                isLoading={processing}
+                leftIcon={<FiCheck />}
+              >
+                Confirmar Devolución
+              </Button>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialogOverlay>
+      </AlertDialog>
+    </>
   );
 };
 

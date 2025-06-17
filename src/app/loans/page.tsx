@@ -1,47 +1,78 @@
+// src/app/loans/page.tsx
+// ================================================================
+// PÁGINA PRINCIPAL DE GESTIÓN DE PRÉSTAMOS - CORREGIDO
+// ================================================================
+
 'use client';
 
-import { DashboardLayout } from '@/components/layout/DashboardLayout';
-import { 
-  LoanList, 
-  LoanFilters, 
-  CreateLoanModal,
-  LoanStatistics 
-} from '@/components/loans';
-import { useState } from 'react';
-import { VStack, HStack, Button, Heading } from '@chakra-ui/react';
+import React from 'react';
+import {
+  Box,
+  VStack,
+  HStack,
+  Button,
+  Heading,
+  useDisclosure
+} from '@chakra-ui/react';
+
 import { FiPlus } from 'react-icons/fi';
 
-export default function LoansPage() {
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+// FIX: Importar desde la ruta correcta /components/loans en lugar de /components/loan
+import { DashboardLayout } from '@/components/layout/DashboardLayout';
+import LoanManagement from '@/components/loans/LoanManagement';
+import CreateLoanModal from '@/components/loans/CreateLoanModal';
+import LoanStatistics from '@/components/loans/LoanStatistics';
+
+// ===== COMPONENTE PRINCIPAL DE LA PÁGINA =====
+
+const LoansPage: React.FC = () => {
+  const { isOpen, onOpen, onClose } = useDisclosure();
+
+  const handleLoanCreated = () => {
+    // Callback cuando se crea un préstamo exitosamente
+    // Aquí podrías disparar eventos para actualizar la lista
+    window.location.reload(); // Temporal - mejor usar estado/context
+  };
 
   return (
     <DashboardLayout>
-      <VStack spacing={6} align="stretch">
-        <HStack justify="space-between">
-          <Heading size="lg">Gestión de Préstamos</Heading>
-          <Button
-            leftIcon={<FiPlus />}
-            colorScheme="blue"
-            onClick={() => setIsCreateModalOpen(true)}
-          >
-            Nuevo Préstamo
-          </Button>
-        </HStack>
+      <Box maxW="full" mx="auto" px={4} py={8}>
+        <VStack spacing={8} align="stretch">
+          {/* Header */}
+          <HStack justify="space-between" align="center">
+            <Heading size="lg" color="gray.700">
+              Gestión de Préstamos
+            </Heading>
+            <Button
+              leftIcon={<FiPlus />}
+              colorScheme="blue"
+              onClick={onOpen}
+              size="md"
+            >
+              Nuevo Préstamo
+            </Button>
+          </HStack>
 
-        <LoanStatistics />
-        
-        <LoanFilters />
-        
-        <LoanList />
+          {/* Estadísticas */}
+          <Box>
+            <LoanStatistics />
+          </Box>
 
-        <CreateLoanModal 
-          isOpen={isCreateModalOpen}
-          onClose={() => setIsCreateModalOpen(false)}
-          onSuccess={() => {
-            // Refrescar lista de préstamos
-          }}
-        />
-      </VStack>
+          {/* Gestión Principal */}
+          <Box>
+            <LoanManagement />
+          </Box>
+
+          {/* Modal de Crear Préstamo */}
+          <CreateLoanModal 
+            isOpen={isOpen}
+            onClose={onClose}
+            onSuccess={handleLoanCreated}
+          />
+        </VStack>
+      </Box>
     </DashboardLayout>
   );
-}
+};
+
+export default LoansPage;
