@@ -5,4 +5,3 @@ export * from './usePeople';
 export * from './useResources';
 export * from './useLoans';     // ✅ NUEVO: Export hooks de préstamos
 export * from './useDebounce';
-export * from './useLoanValidation';

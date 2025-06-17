@@ -1,4 +1,8 @@
-// src/services/loan.service.ts
+// services/loan.service.ts
+// ================================================================
+// SERVICIO DE PRÉSTAMOS - FRONTEND CORREGIDO
+// ================================================================
+
 import axiosInstance from '@/lib/axios';
 import type {
   Loan,
@@ -21,7 +25,7 @@ import type {
   PaginatedResponse
 } from '@/types/loan.types';
 
-// ===== ENDPOINTS =====
+// ===== ENDPOINTS CORREGIDOS =====
 const LOAN_ENDPOINTS = {
   // Préstamos principales
   LOANS: '/loans',
@@ -30,13 +34,12 @@ const LOAN_ENDPOINTS = {
   PERSON_LOANS: (personId: string) => `/loans/person/${personId}`,
   RESOURCE_LOANS: (resourceId: string) => `/loans/resource/${resourceId}`,
   
-  // Validaciones
+  // Validaciones - CORREGIDO
   CAN_BORROW: (personId: string) => `/loans/can-borrow/${personId}`,
   RESOURCE_AVAILABILITY: (resourceId: string) => `/loans/resource-availability/${resourceId}`,
   
-  // Devoluciones
+  // Devoluciones - ENDPOINTS CORREGIDOS
   RETURNS: '/returns',
-  RETURN_LOAN: (loanId: string) => `/returns/${loanId}`,
   MARK_AS_LOST: (loanId: string) => `/returns/${loanId}/mark-lost`,
   RENEW_LOAN: (loanId: string) => `/returns/${loanId}/renew`,
   RETURN_HISTORY: '/returns/history',
@@ -45,33 +48,57 @@ const LOAN_ENDPOINTS = {
   // Préstamos vencidos
   OVERDUE: '/overdue',
   OVERDUE_STATS: '/overdue/stats',
+  LOANS_DUE_SOON: '/overdue/near-due',
   
   // Estadísticas
-  LOAN_STATS: '/loans/stats',
-  STOCK_STATS: '/loans/stats/stock',
+  LOAN_STATISTICS: '/loans/statistics',
+  LOAN_SUMMARY: '/loans/summary',
+  STOCK_STATISTICS: '/loans/stock-stats'
 } as const;
 
-export class LoanService {
-  // ===== OPERACIONES PRINCIPALES =====
+// ===== HELPER PARA MANEJAR RESPUESTAS API =====
+const handleApiResponse = <T>(response: ApiResponse<T>): T => {
+  if (response.success && response.data !== undefined) {
+    return response.data;
+  }
+  throw new Error(response.message || 'Error en la operación');
+};
 
+// ===== HELPER PARA FORMATEAR FECHAS =====
+const formatDateForApi = (date: Date | string | undefined): string | undefined => {
+  if (!date) return undefined;
+  if (typeof date === 'string') return date;
+  return date.toISOString();
+};
+
+// ===== SERVICIO PRINCIPAL =====
+export class LoanService {
+  
+  // ===== OPERACIONES DE PRÉSTAMOS =====
+  
   /**
    * Crear un nuevo préstamo
    */
-  static async createLoan(loanData: CreateLoanRequest): Promise<LoanWithDetails> {
+  static async createLoan(data: CreateLoanRequest): Promise<LoanWithDetails> {
     try {
-      console.log('📝 LoanService: Creando préstamo:', loanData);
-      
+      console.log('🔄 LoanService: Creando préstamo:', data);
+
+      // ✅ CORRECCIÓN: Asegurar que quantity esté presente
+      const requestData = {
+        personId: data.personId,
+        resourceId: data.resourceId,
+        quantity: data.quantity || 1, // Default a 1 si no se proporciona
+        observations: data.observations?.trim() || undefined
+      };
+
       const response = await axiosInstance.post<ApiResponse<LoanWithDetails>>(
         LOAN_ENDPOINTS.LOANS,
-        loanData
+        requestData
       );
-
-      if (response.data.success && response.data.data) {
-        console.log('✅ LoanService: Préstamo creado exitosamente:', response.data.data._id);
-        return response.data.data;
-      }
-
-      throw new Error(response.data.message || 'Error al crear préstamo');
+      
+      const loan = handleApiResponse(response.data);
+      console.log('✅ LoanService: Préstamo creado exitosamente:', loan._id);
+      return loan;
     } catch (error: any) {
       console.error('❌ LoanService: Error al crear préstamo:', error);
       throw error;
@@ -79,49 +106,19 @@ export class LoanService {
   }
 
   /**
-   * Obtener todos los préstamos con filtros
-   */
-  static async getLoans(filters: LoanSearchFilters = {}): Promise<PaginatedResponse<LoanWithDetails>> {
-    try {
-      const params = new URLSearchParams();
-      
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== '') {
-          params.append(key, value.toString());
-        }
-      });
-
-      console.log('🔍 LoanService: Obteniendo préstamos con filtros:', filters);
-      
-      const response = await axiosInstance.get<PaginatedResponse<LoanWithDetails>>(
-        `${LOAN_ENDPOINTS.LOANS}?${params.toString()}`
-      );
-
-      console.log(`✅ LoanService: ${response.data.data.length} préstamos obtenidos`);
-      return response.data;
-    } catch (error: any) {
-      console.error('❌ LoanService: Error al obtener préstamos:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Obtener un préstamo por ID
+   * Obtener préstamo por ID
    */
   static async getLoanById(id: string): Promise<LoanWithDetails> {
     try {
-      console.log('🔍 LoanService: Obteniendo préstamo por ID:', id);
-      
+      console.log('🔍 LoanService: Obteniendo préstamo:', id);
+
       const response = await axiosInstance.get<ApiResponse<LoanWithDetails>>(
         LOAN_ENDPOINTS.LOAN_BY_ID(id)
       );
-
-      if (response.data.success && response.data.data) {
-        console.log('✅ LoanService: Préstamo obtenido exitosamente');
-        return response.data.data;
-      }
-
-      throw new Error(response.data.message || 'Préstamo no encontrado');
+      
+      const loan = handleApiResponse(response.data);
+      console.log('✅ LoanService: Préstamo obtenido exitosamente');
+      return loan;
     } catch (error: any) {
       console.error('❌ LoanService: Error al obtener préstamo:', error);
       throw error;
@@ -129,23 +126,55 @@ export class LoanService {
   }
 
   /**
-   * Actualizar un préstamo
+   * Buscar préstamos con filtros y paginación
    */
-  static async updateLoan(id: string, updateData: UpdateLoanRequest): Promise<LoanWithDetails> {
+  static async searchLoans(filters: LoanSearchFilters = {}): Promise<PaginatedResponse<LoanWithDetails>> {
     try {
-      console.log('📝 LoanService: Actualizando préstamo:', id);
-      
-      const response = await axiosInstance.patch<ApiResponse<LoanWithDetails>>(
-        LOAN_ENDPOINTS.LOAN_BY_ID(id),
-        updateData
+      console.log('🔍 LoanService: Buscando préstamos con filtros:', filters);
+
+      // ✅ CORRECCIÓN: Formatear fechas correctamente
+      const params = {
+        ...filters,
+        dateFrom: formatDateForApi(filters.dateFrom),
+        dateTo: formatDateForApi(filters.dateTo)
+      };
+
+      const response = await axiosInstance.get<ApiResponse<PaginatedResponse<LoanWithDetails>>>(
+        LOAN_ENDPOINTS.LOANS,
+        { params }
       );
+      
+      const result = handleApiResponse(response.data);
+      console.log('✅ LoanService: Búsqueda completada:', result.pagination.total, 'préstamos');
+      return result;
+    } catch (error: any) {
+      console.error('❌ LoanService: Error al buscar préstamos:', error);
+      throw error;
+    }
+  }
 
-      if (response.data.success && response.data.data) {
-        console.log('✅ LoanService: Préstamo actualizado exitosamente');
-        return response.data.data;
-      }
+  /**
+   * Actualizar préstamo
+   */
+  static async updateLoan(id: string, data: UpdateLoanRequest): Promise<LoanWithDetails> {
+    try {
+      console.log('📝 LoanService: Actualizando préstamo:', id, data);
 
-      throw new Error(response.data.message || 'Error al actualizar préstamo');
+      // ✅ CORRECCIÓN: Formatear fecha de vencimiento
+      const requestData = {
+        ...data,
+        dueDate: formatDateForApi(data.dueDate),
+        observations: data.observations?.trim() || undefined
+      };
+
+      const response = await axiosInstance.put<ApiResponse<LoanWithDetails>>(
+        LOAN_ENDPOINTS.LOAN_BY_ID(id),
+        requestData
+      );
+      
+      const loan = handleApiResponse(response.data);
+      console.log('✅ LoanService: Préstamo actualizado exitosamente');
+      return loan;
     } catch (error: any) {
       console.error('❌ LoanService: Error al actualizar préstamo:', error);
       throw error;
@@ -155,58 +184,39 @@ export class LoanService {
   // ===== VALIDACIONES =====
 
   /**
-   * Validar si una persona puede pedir prestado
+   * Verificar si una persona puede pedir préstamos
    */
-  static async canPersonBorrow(personId: string, includeDetails: boolean = true): Promise<CanBorrowResult> {
+  static async canPersonBorrow(personId: string): Promise<CanBorrowResult> {
     try {
-      console.log('🔍 LoanService: Validando si persona puede pedir prestado:', personId);
-      
-      const params = new URLSearchParams();
-      if (includeDetails) {
-        params.append('includeDetails', 'true');
-      }
+      console.log('🔍 LoanService: Verificando elegibilidad de persona:', personId);
 
       const response = await axiosInstance.get<ApiResponse<CanBorrowResult>>(
-        `${LOAN_ENDPOINTS.CAN_BORROW(personId)}?${params.toString()}`
+        LOAN_ENDPOINTS.CAN_BORROW(personId)
       );
-
-      if (response.data.success && response.data.data) {
-        console.log(`✅ LoanService: Validación completada - Can borrow: ${response.data.data.canBorrow}`);
-        return response.data.data;
-      }
-
-      throw new Error(response.data.message || 'Error al validar persona');
+      
+      const result = handleApiResponse(response.data);
+      console.log('✅ LoanService: Verificación completada. Puede prestar:', result.canBorrow);
+      return result;
     } catch (error: any) {
-      console.error('❌ LoanService: Error al validar persona:', error);
+      console.error('❌ LoanService: Error al verificar elegibilidad:', error);
       throw error;
     }
   }
 
   /**
-   * Verificar disponibilidad de un recurso
+   * Verificar disponibilidad de recurso
    */
-  static async checkResourceAvailability(
-    resourceId: string, 
-    requestedQuantity: number = 1
-  ): Promise<ResourceAvailabilityResult> {
+  static async checkResourceAvailability(resourceId: string): Promise<ResourceAvailabilityResult> {
     try {
-      console.log('🔍 LoanService: Verificando disponibilidad del recurso:', resourceId, 'cantidad:', requestedQuantity);
-      
-      const params = new URLSearchParams();
-      if (requestedQuantity > 1) {
-        params.append('requestedQuantity', requestedQuantity.toString());
-      }
+      console.log('🔍 LoanService: Verificando disponibilidad de recurso:', resourceId);
 
       const response = await axiosInstance.get<ApiResponse<ResourceAvailabilityResult>>(
-        `${LOAN_ENDPOINTS.RESOURCE_AVAILABILITY(resourceId)}?${params.toString()}`
+        LOAN_ENDPOINTS.RESOURCE_AVAILABILITY(resourceId)
       );
-
-      if (response.data.success && response.data.data) {
-        console.log(`✅ LoanService: Disponibilidad verificada - Disponible: ${response.data.data.canLoan}`);
-        return response.data.data;
-      }
-
-      throw new Error(response.data.message || 'Error al verificar disponibilidad');
+      
+      const result = handleApiResponse(response.data);
+      console.log('✅ LoanService: Disponibilidad verificada. Puede prestar:', result.canLoan);
+      return result;
     } catch (error: any) {
       console.error('❌ LoanService: Error al verificar disponibilidad:', error);
       throw error;
@@ -214,55 +224,59 @@ export class LoanService {
   }
 
   /**
-   * Validar préstamo completo (persona + recurso + cantidad)
+   * Validar préstamo antes de crear
    */
-  static async validateLoan(validationData: {
-    personId: string;
-    resourceId: string;
-    quantity: number;
-  }): Promise<LoanValidationResult> {
+  static async validateLoan(data: CreateLoanRequest): Promise<LoanValidationResult> {
     try {
-      console.log('🔍 LoanService: Validando préstamo completo:', validationData);
-      
+      console.log('🔍 LoanService: Validando datos de préstamo:', data);
+
+      // ✅ CORRECCIÓN: Asegurar quantity
+      const requestData = {
+        ...data,
+        quantity: data.quantity || 1
+      };
+
       const response = await axiosInstance.post<ApiResponse<LoanValidationResult>>(
         LOAN_ENDPOINTS.VALIDATE_LOAN,
-        validationData
+        requestData
       );
-
-      if (response.data.success && response.data.data) {
-        console.log(`✅ LoanService: Validación completada - Válido: ${response.data.data.isValid}`);
-        return response.data.data;
-      }
-
-      throw new Error(response.data.message || 'Error al validar préstamo');
+      
+      const result = handleApiResponse(response.data);
+      console.log('✅ LoanService: Validación completada. Es válido:', result.isValid);
+      return result;
     } catch (error: any) {
       console.error('❌ LoanService: Error al validar préstamo:', error);
       throw error;
     }
   }
 
-  // ===== DEVOLUCIONES =====
+  // ===== OPERACIONES DE DEVOLUCIÓN =====
 
   /**
-   * Devolver un préstamo
+   * Procesar devolución de préstamo
    */
-  static async returnLoan(loanId: string, returnData: ReturnLoanRequest): Promise<ReturnLoanResponse> {
+  static async returnLoan(data: ReturnLoanRequest): Promise<ReturnLoanResponse> {
     try {
-      console.log('📝 LoanService: Devolviendo préstamo:', loanId);
-      
+      console.log('📝 LoanService: Procesando devolución:', data);
+
+      // ✅ CORRECCIÓN: Usar estructura correcta y formatear fecha
+      const requestData = {
+        loanId: data.loanId,
+        returnDate: formatDateForApi(data.returnDate) || new Date().toISOString(),
+        resourceCondition: data.resourceCondition?.trim(),
+        returnObservations: data.returnObservations?.trim()
+      };
+
       const response = await axiosInstance.post<ApiResponse<ReturnLoanResponse>>(
-        LOAN_ENDPOINTS.RETURN_LOAN(loanId),
-        returnData
+        LOAN_ENDPOINTS.RETURNS, // ✅ ENDPOINT CORREGIDO
+        requestData
       );
-
-      if (response.data.success && response.data.data) {
-        console.log('✅ LoanService: Préstamo devuelto exitosamente');
-        return response.data.data;
-      }
-
-      throw new Error(response.data.message || 'Error al devolver préstamo');
+      
+      const result = handleApiResponse(response.data);
+      console.log('✅ LoanService: Devolución procesada exitosamente');
+      return result;
     } catch (error: any) {
-      console.error('❌ LoanService: Error al devolver préstamo:', error);
+      console.error('❌ LoanService: Error al procesar devolución:', error);
       throw error;
     }
   }
@@ -270,21 +284,20 @@ export class LoanService {
   /**
    * Marcar préstamo como perdido
    */
-  static async markAsLost(loanId: string, lostData: MarkAsLostRequest): Promise<LoanWithDetails> {
+  static async markAsLost(loanId: string, data: MarkAsLostRequest): Promise<LoanWithDetails> {
     try {
-      console.log('📝 LoanService: Marcando préstamo como perdido:', loanId);
-      
-      const response = await axiosInstance.post<ApiResponse<LoanWithDetails>>(
+      console.log('📝 LoanService: Marcando como perdido:', loanId);
+
+      const response = await axiosInstance.put<ApiResponse<LoanWithDetails>>(
         LOAN_ENDPOINTS.MARK_AS_LOST(loanId),
-        lostData
+        {
+          observations: data.observations.trim()
+        }
       );
-
-      if (response.data.success && response.data.data) {
-        console.log('✅ LoanService: Préstamo marcado como perdido exitosamente');
-        return response.data.data;
-      }
-
-      throw new Error(response.data.message || 'Error al marcar como perdido');
+      
+      const result = handleApiResponse(response.data);
+      console.log('✅ LoanService: Marcado como perdido exitosamente');
+      return result;
     } catch (error: any) {
       console.error('❌ LoanService: Error al marcar como perdido:', error);
       throw error;
@@ -292,51 +305,54 @@ export class LoanService {
   }
 
   /**
-   * Renovar un préstamo
+   * Renovar préstamo
    */
-  static async renewLoan(loanId: string): Promise<RenewLoanResponse> {
+  static async renewLoan(loanId: string, newDueDate?: string): Promise<RenewLoanResponse> {
     try {
-      console.log('📝 LoanService: Renovando préstamo:', loanId);
-      
-      const response = await axiosInstance.post<ApiResponse<RenewLoanResponse>>(
-        LOAN_ENDPOINTS.RENEW_LOAN(loanId)
+      console.log('🔄 LoanService: Renovando préstamo:', loanId);
+
+      const requestData = newDueDate ? {
+        newDueDate: formatDateForApi(newDueDate)
+      } : {};
+
+      const response = await axiosInstance.put<ApiResponse<RenewLoanResponse>>(
+        LOAN_ENDPOINTS.RENEW_LOAN(loanId),
+        requestData
       );
-
-      if (response.data.success && response.data.data) {
-        console.log('✅ LoanService: Préstamo renovado exitosamente');
-        return response.data.data;
-      }
-
-      throw new Error(response.data.message || 'Error al renovar préstamo');
+      
+      const result = handleApiResponse(response.data);
+      console.log('✅ LoanService: Préstamo renovado exitosamente');
+      return result;
     } catch (error: any) {
       console.error('❌ LoanService: Error al renovar préstamo:', error);
       throw error;
     }
   }
 
-  // ===== PRÉSTAMOS VENCIDOS =====
+  // ===== GESTIÓN DE PRÉSTAMOS VENCIDOS =====
 
   /**
    * Obtener préstamos vencidos
    */
   static async getOverdueLoans(filters: OverdueFilters = {}): Promise<PaginatedResponse<LoanWithDetails>> {
     try {
-      const params = new URLSearchParams();
-      
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== '') {
-          params.append(key, value.toString());
-        }
-      });
-
       console.log('🔍 LoanService: Obteniendo préstamos vencidos:', filters);
-      
-      const response = await axiosInstance.get<PaginatedResponse<LoanWithDetails>>(
-        `${LOAN_ENDPOINTS.OVERDUE}?${params.toString()}`
-      );
 
-      console.log(`✅ LoanService: ${response.data.data.length} préstamos vencidos obtenidos`);
-      return response.data;
+      // ✅ CORRECCIÓN: Formatear fechas
+      const params = {
+        ...filters,
+        dateFrom: formatDateForApi(filters.dateFrom),
+        dateTo: formatDateForApi(filters.dateTo)
+      };
+
+      const response = await axiosInstance.get<ApiResponse<PaginatedResponse<LoanWithDetails>>>(
+        LOAN_ENDPOINTS.OVERDUE,
+        { params }
+      );
+      
+      const result = handleApiResponse(response.data);
+      console.log('✅ LoanService: Préstamos vencidos obtenidos:', result.pagination.total);
+      return result;
     } catch (error: any) {
       console.error('❌ LoanService: Error al obtener préstamos vencidos:', error);
       throw error;
@@ -348,107 +364,60 @@ export class LoanService {
    */
   static async getOverdueStats(): Promise<OverdueStats> {
     try {
-      console.log('🔍 LoanService: Obteniendo estadísticas de vencidos');
-      
+      console.log('📊 LoanService: Obteniendo estadísticas de vencidos');
+
       const response = await axiosInstance.get<ApiResponse<OverdueStats>>(
         LOAN_ENDPOINTS.OVERDUE_STATS
       );
-
-      if (response.data.success && response.data.data) {
-        console.log('✅ LoanService: Estadísticas de vencidos obtenidas');
-        return response.data.data;
-      }
-
-      throw new Error(response.data.message || 'Error al obtener estadísticas');
+      
+      const result = handleApiResponse(response.data);
+      console.log('✅ LoanService: Estadísticas de vencidos obtenidas');
+      return result;
     } catch (error: any) {
       console.error('❌ LoanService: Error al obtener estadísticas de vencidos:', error);
       throw error;
     }
   }
 
-  // ===== CONSULTAS ESPECÍFICAS =====
-
   /**
-   * Obtener préstamos de una persona
+   * Obtener préstamos próximos a vencer
    */
-  static async getPersonLoans(
-    personId: string, 
-    filters: Partial<LoanSearchFilters> = {}
-  ): Promise<PaginatedResponse<LoanWithDetails>> {
+  static async getLoansDueSoon(days: number = 3): Promise<LoanWithDetails[]> {
     try {
-      const params = new URLSearchParams();
-      
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== '') {
-          params.append(key, value.toString());
-        }
-      });
+      console.log('⏰ LoanService: Obteniendo préstamos próximos a vencer');
 
-      console.log('🔍 LoanService: Obteniendo préstamos de persona:', personId);
-      
-      const response = await axiosInstance.get<PaginatedResponse<LoanWithDetails>>(
-        `${LOAN_ENDPOINTS.PERSON_LOANS(personId)}?${params.toString()}`
+      const response = await axiosInstance.get<ApiResponse<LoanWithDetails[]>>(
+        LOAN_ENDPOINTS.LOANS_DUE_SOON,
+        { params: { days } }
       );
-
-      console.log(`✅ LoanService: ${response.data.data.length} préstamos de persona obtenidos`);
-      return response.data;
+      
+      const result = handleApiResponse(response.data);
+      console.log('✅ LoanService: Préstamos próximos a vencer obtenidos:', result.length);
+      return result;
     } catch (error: any) {
-      console.error('❌ LoanService: Error al obtener préstamos de persona:', error);
+      console.error('❌ LoanService: Error al obtener préstamos próximos a vencer:', error);
       throw error;
     }
   }
 
-  /**
-   * Obtener préstamos de un recurso
-   */
-  static async getResourceLoans(
-    resourceId: string, 
-    filters: Partial<LoanSearchFilters> = {}
-  ): Promise<PaginatedResponse<LoanWithDetails>> {
-    try {
-      const params = new URLSearchParams();
-      
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== '') {
-          params.append(key, value.toString());
-        }
-      });
-
-      console.log('🔍 LoanService: Obteniendo préstamos de recurso:', resourceId);
-      
-      const response = await axiosInstance.get<PaginatedResponse<LoanWithDetails>>(
-        `${LOAN_ENDPOINTS.RESOURCE_LOANS(resourceId)}?${params.toString()}`
-      );
-
-      console.log(`✅ LoanService: ${response.data.data.length} préstamos de recurso obtenidos`);
-      return response.data;
-    } catch (error: any) {
-      console.error('❌ LoanService: Error al obtener préstamos de recurso:', error);
-      throw error;
-    }
-  }
-
-  // ===== ESTADÍSTICAS =====
+  // ===== ESTADÍSTICAS Y REPORTES =====
 
   /**
    * Obtener estadísticas generales de préstamos
    */
-  static async getLoanStats(): Promise<LoanStats> {
+  static async getLoanStatistics(): Promise<LoanStats> {
     try {
-      console.log('🔍 LoanService: Obteniendo estadísticas de préstamos');
-      
+      console.log('📊 LoanService: Obteniendo estadísticas generales');
+
       const response = await axiosInstance.get<ApiResponse<LoanStats>>(
-        LOAN_ENDPOINTS.LOAN_STATS
+        LOAN_ENDPOINTS.LOAN_STATISTICS
       );
-
-      if (response.data.success && response.data.data) {
-        console.log('✅ LoanService: Estadísticas de préstamos obtenidas');
-        return response.data.data;
-      }
-
-      throw new Error(response.data.message || 'Error al obtener estadísticas');
+      
+      const result = handleApiResponse(response.data);
+      console.log('✅ LoanService: Estadísticas generales obtenidas');
+      return result;
     } catch (error: any) {
-      console.error('❌ LoanService: Error al obtener estadísticas de préstamos:', error);
+      console.error('❌ LoanService: Error al obtener estadísticas generales:', error);
       throw error;
     }
   }
@@ -456,79 +425,140 @@ export class LoanService {
   /**
    * Obtener estadísticas de stock
    */
-  static async getStockStats(): Promise<StockStats> {
+  static async getStockStatistics(): Promise<StockStats> {
     try {
-      console.log('🔍 LoanService: Obteniendo estadísticas de stock');
-      
+      console.log('📊 LoanService: Obteniendo estadísticas de stock');
+
       const response = await axiosInstance.get<ApiResponse<StockStats>>(
-        LOAN_ENDPOINTS.STOCK_STATS
+        LOAN_ENDPOINTS.STOCK_STATISTICS
       );
-
-      if (response.data.success && response.data.data) {
-        console.log('✅ LoanService: Estadísticas de stock obtenidas');
-        return response.data.data;
-      }
-
-      throw new Error(response.data.message || 'Error al obtener estadísticas de stock');
+      
+      const result = handleApiResponse(response.data);
+      console.log('✅ LoanService: Estadísticas de stock obtenidas');
+      return result;
     } catch (error: any) {
       console.error('❌ LoanService: Error al obtener estadísticas de stock:', error);
       throw error;
     }
   }
 
-  // ===== HISTORIAL Y DEVOLUCIONES =====
+  /**
+   * Obtener resumen rápido de préstamos
+   */
+  static async getLoanSummary(): Promise<{
+    totalActive: number;
+    totalOverdue: number;
+    totalDueSoon: number;
+    totalReturnsToday: number;
+  }> {
+    try {
+      console.log('📋 LoanService: Obteniendo resumen de préstamos');
+
+      const response = await axiosInstance.get<ApiResponse<{
+        totalActive: number;
+        totalOverdue: number;
+        totalDueSoon: number;
+        totalReturnsToday: number;
+      }>>(LOAN_ENDPOINTS.LOAN_SUMMARY);
+      
+      const result = handleApiResponse(response.data);
+      console.log('✅ LoanService: Resumen obtenido');
+      return result;
+    } catch (error: any) {
+      console.error('❌ LoanService: Error al obtener resumen:', error);
+      throw error;
+    }
+  }
+
+  // ===== OPERACIONES POR PERSONA/RECURSO =====
 
   /**
-   * Obtener historial de devoluciones
+   * Obtener préstamos de una persona específica
    */
-  static async getReturnHistory(filters: Partial<LoanSearchFilters> = {}): Promise<PaginatedResponse<LoanWithDetails>> {
+  static async getPersonLoans(personId: string, filters: Partial<LoanSearchFilters> = {}): Promise<PaginatedResponse<LoanWithDetails>> {
     try {
-      const params = new URLSearchParams();
-      
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== '') {
-          params.append(key, value.toString());
-        }
-      });
+      console.log('👤 LoanService: Obteniendo préstamos de persona:', personId);
 
-      console.log('🔍 LoanService: Obteniendo historial de devoluciones');
-      
-      const response = await axiosInstance.get<PaginatedResponse<LoanWithDetails>>(
-        `${LOAN_ENDPOINTS.RETURN_HISTORY}?${params.toString()}`
+      const response = await axiosInstance.get<ApiResponse<PaginatedResponse<LoanWithDetails>>>(
+        LOAN_ENDPOINTS.PERSON_LOANS(personId),
+        { params: filters }
       );
-
-      console.log(`✅ LoanService: ${response.data.data.length} devoluciones en historial`);
-      return response.data;
+      
+      const result = handleApiResponse(response.data);
+      console.log('✅ LoanService: Préstamos de persona obtenidos:', result.pagination.total);
+      return result;
     } catch (error: any) {
-      console.error('❌ LoanService: Error al obtener historial de devoluciones:', error);
+      console.error('❌ LoanService: Error al obtener préstamos de persona:', error);
       throw error;
     }
   }
 
   /**
-   * Obtener préstamos pendientes de devolución
+   * Obtener préstamos de un recurso específico
    */
-  static async getPendingReturns(filters: Partial<LoanSearchFilters> = {}): Promise<PaginatedResponse<LoanWithDetails>> {
+  static async getResourceLoans(resourceId: string, filters: Partial<LoanSearchFilters> = {}): Promise<PaginatedResponse<LoanWithDetails>> {
     try {
-      const params = new URLSearchParams();
-      
-      Object.entries(filters).forEach(([key, value]) => {
-        if (value !== undefined && value !== null && value !== '') {
-          params.append(key, value.toString());
-        }
-      });
+      console.log('📚 LoanService: Obteniendo préstamos de recurso:', resourceId);
 
-      console.log('🔍 LoanService: Obteniendo préstamos pendientes de devolución');
-      
-      const response = await axiosInstance.get<PaginatedResponse<LoanWithDetails>>(
-        `${LOAN_ENDPOINTS.PENDING_RETURNS}?${params.toString()}`
+      const response = await axiosInstance.get<ApiResponse<PaginatedResponse<LoanWithDetails>>>(
+        LOAN_ENDPOINTS.RESOURCE_LOANS(resourceId),
+        { params: filters }
       );
-
-      console.log(`✅ LoanService: ${response.data.data.length} préstamos pendientes de devolución`);
-      return response.data;
+      
+      const result = handleApiResponse(response.data);
+      console.log('✅ LoanService: Préstamos de recurso obtenidos:', result.pagination.total);
+      return result;
     } catch (error: any) {
-      console.error('❌ LoanService: Error al obtener préstamos pendientes:', error);
+      console.error('❌ LoanService: Error al obtener préstamos de recurso:', error);
       throw error;
     }
+  }
+
+  // ===== UTILIDADES =====
+
+  /**
+   * Obtener configuración de límites del sistema
+   */
+  static getSystemLimits() {
+    return {
+      maxLoansPerPerson: 5,
+      maxLoanDays: 15,
+      maxQuantityStudent: 3,
+      maxQuantityTeacher: 10,
+      maxQuantityAbsolute: 50
+    };
+  }
+
+  /**
+   * Calcular días de retraso
+   */
+  static calculateDaysOverdue(dueDate: Date | string): number {
+    const due = new Date(dueDate);
+    const now = new Date();
+    
+    if (now <= due) return 0;
+    
+    const diffTime = now.getTime() - due.getTime();
+    return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+  }
+
+  /**
+   * Verificar si un préstamo está vencido
+   */
+  static isLoanOverdue(loan: Loan): boolean {
+    return !loan.returnedDate && new Date() > new Date(loan.dueDate);
+  }
+
+  /**
+   * Formatear fecha para mostrar
+   */
+  static formatDisplayDate(date: Date | string): string {
+    return new Date(date).toLocaleDateString('es-ES', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    });
   }
 }
+
+export default LoanService;
